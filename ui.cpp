@@ -10,11 +10,12 @@
 #include "fonts.h"
 #include "settings.h"
 #include "rotary_encoder.h"
-
+#include "pwm_audio_sink.h"
 #include <algorithm>
 
 #define WATERFALL_WIDTH (128)
 #define WATERFALL_MAX_VALUE (64)
+extern float keyer_amplitude_scale;
 
 void strip_trailing_space(const char *x, char *y)
 {
@@ -962,6 +963,7 @@ bool ui::number_entry(const char title[], const char format[], int16_t min, int1
   value = (int8_t)extended_value;
   return return_value;
 }
+
 bool ui::number_entry(const char title[], const char format[], int16_t min, int16_t max, int16_t multiple, int32_t &value, bool &ok, bool &changed)
 {
   enum e_state{idle, active};
@@ -2098,6 +2100,83 @@ bool ui::noise_menu(bool & ok)
     return false;
 }
 
+bool ui::transmit_menu(bool &ok)
+{
+    enum e_ui_state{select_menu_item, menu_item_active};
+    static e_ui_state ui_state = select_menu_item;
+    
+    static uint32_t menu_selection = 0;
+
+    //chose menu item
+    if(ui_state == select_menu_item)
+    {
+      if(menu_entry("Transmit", "MIC Gain#Test Tone\nEnable#Test Tone\nFrequency#CW Paddle#CW Speed#Modulation#PWM\nMinimum#PWM\nMaximum#PWM\nThreshold#", &menu_selection, ok))
+      {
+        if(ok) 
+        {
+          //OK button pressed, more work to do
+          ui_state = menu_item_active;
+          return false;
+        }
+        else
+        {
+          //cancel button pressed, done with menu
+          menu_selection = 0;
+          ui_state = select_menu_item;
+          return true;
+        }
+      }
+    }
+
+    //menu item active
+    else if(ui_state == menu_item_active)
+    {
+      bool done = false;
+      bool changed = false;
+      switch(menu_selection)
+      {
+
+        case 0 : 
+          done = enumerate_entry("MIC Gain", "0dB#6dB#12dB#18dB#24dB#30dB#36dB#42dB#48dB#54dB#60dB#", settings.global.mic_gain, ok, changed);
+          break;
+        case 1 : 
+          done = bit_entry("Test Tone\nEnable", "Off#On#", settings.global.test_tone_enable, ok);
+          break;
+        case 2 : 
+          done = number_entry("Test Tone\nFrequency", "%iHz", 1, 30, 100, settings.global.test_tone_frequency, ok, changed);
+          break;
+        case 3 : 
+          done = enumerate_entry("CW Paddle", "Straight#Iambic A#Iambic B#", settings.global.cw_paddle, ok, changed);
+          break;
+        case 4 : 
+          done = number_entry("CW Speed", "%iWPM", 1, 60, 1, settings.global.cw_speed, ok, changed);
+          break;
+        case 5 : 
+          done = bit_entry("Modulation", "Polar#Rectangular#", settings.global.tx_modulation, ok);
+          break;
+        case 6 : 
+          done = number_entry("PWM Min", "%i", 0, 255, 1, settings.global.pwm_min, ok, changed);
+          break;
+        case 7 : 
+          done = number_entry("PWM Max", "%i", 0, 255, 1, settings.global.pwm_max, ok, changed);
+          break;
+        case 8 : 
+          done = number_entry("PWM Thresh", "%i", 0, 255, 1, settings.global.pwm_threshold, ok, changed);
+          break;
+      }
+
+      if(changed) apply_settings(false);
+      if(done)
+      {
+        menu_selection = 0;
+        ui_state = select_menu_item;
+        return true;
+      }
+    }
+    return false;
+
+}
+
 bool ui::main_menu(bool & ok)
 {
 
@@ -2108,7 +2187,7 @@ bool ui::main_menu(bool & ok)
     //chose menu item
     if(ui_state == select_menu_item)
     {
-      if(menu_entry("Menu", "Frequency#Recall#Store#Volume#Mode#AGC#AGC Gain#Bandwidth#Squelch#Squelch\nTimeout#Noise\nReduction#Auto Notch#De-\nEmphasis#Bass#Treble#IQ\nCorrection#Spectrum#Aux\nDisplay#Band Start#Band Stop#Frequency\nStep#CW Tone\nFrequency#USB Stream#HW Config#", &menu_selection, ok))
+      if(menu_entry("Menu", "Frequency#Recall#Store#Volume#Mode#AGC#AGC Gain#Bandwidth#Squelch#Squelch\nTimeout#Noise\nReduction#Auto Notch#De-\nEmphasis#Bass#Treble#IQ\nCorrection#Spectrum#Aux\nDisplay#Band Start#Band Stop#Frequency\nStep#CW Tone\nFrequency#USB Stream#HW Config#Transmit#", &menu_selection, ok))
       {
         if(ok) 
         {
@@ -2217,6 +2296,9 @@ bool ui::main_menu(bool & ok)
           case 23 : 
             done = configuration_menu(ok);
             break;
+          case 24 : 
+            done = transmit_menu(ok);
+            break;
         }
         if(done)
         {
@@ -2283,6 +2365,111 @@ bool ui::spectrum_menu(bool & ok)
 
     return false;
 }
+
+/* 
+bool ui::transmit_menu(bool &ok)
+{
+    enum e_ui_state{select_menu_item, menu_item_active};
+    static e_ui_state ui_state = select_menu_item;
+    
+    static uint32_t menu_selection = 0;
+
+    //chose menu item
+    if(ui_state == select_menu_item)
+    {
+      if(menu_entry("Transmit", "MIC Gain#Test Tone\nEnable#Test Tone\nFrequency#CW Paddle#CW Speed#Modulation#PWM\nMinimum#PWM\nMaximum#PWM\nThreshold#", &menu_selection, ok))
+      {
+        if(ok) 
+        {
+          //OK button pressed, more work to do
+          ui_state = menu_item_active;
+          return false;
+        }
+        else
+        {
+          //cancel button pressed, done with menu
+          menu_selection = 0;
+          ui_state = select_menu_item;
+          return true;
+        }
+      }
+    }
+
+    //menu item active
+    else if(ui_state == menu_item_active)
+    {
+      bool done = false;
+      bool changed = false;
+      static uint32_t setting_word;
+      switch(menu_selection)
+      {
+
+        case 0 : 
+          setting_word = (settings[idx_tx_features] & mask_mic_gain) >> flag_mic_gain;
+          done = enumerate_entry("MIC Gain", "0dB#6dB#12dB#18dB#24dB#30dB#36dB#42dB#48dB#54dB#60dB#", &setting_word, ok, changed);
+          settings[idx_tx_features] &= ~(mask_mic_gain);
+          settings[idx_tx_features] |= ((setting_word << flag_mic_gain) & mask_mic_gain);
+          if(changed) apply_settings(false);
+          break;
+
+        case 1 : 
+          done = bit_entry("Test Tone\nEnable", "Off#On#", flag_enable_test_tone, &settings[idx_tx_features], ok);
+          break;
+
+        case 2 : 
+          setting_word = (settings[idx_tx_features] & mask_test_tone_frequency) >> flag_test_tone_frequency;
+          done = number_entry("Test Tone\nFrequency", "%iHz", 1, 30, 100, (int32_t*)&setting_word, ok, changed);
+          settings[idx_tx_features] &=  ~mask_test_tone_frequency;
+          settings[idx_tx_features] |=  setting_word << flag_test_tone_frequency;
+          break;
+
+        case 3 : 
+          setting_word = unpack(settings[idx_tx_features], flag_cw_paddle, mask_cw_paddle);
+          done = enumerate_entry("CW Paddle", "Straight#Iambic A#Iambic B#", &setting_word, ok, changed);
+          pack(settings[idx_tx_features], setting_word, flag_cw_paddle, mask_cw_paddle);
+          break;
+
+        case 4 : 
+          setting_word = (settings[idx_tx_features] & mask_cw_speed) >> flag_cw_speed;
+          done = number_entry("CW Speed", "%iWPM", 1, 60, 1, (int32_t*)&setting_word, ok, changed);
+          settings[idx_tx_features] &=  ~mask_cw_speed;
+          settings[idx_tx_features] |=  setting_word << flag_cw_speed;
+          break;
+
+        case 5 : 
+          done = bit_entry("Modulation", "Polar#Rectangular#", flag_tx_modulation, &settings[idx_tx_features], ok);
+          break;
+
+        case 6 : 
+          setting_word = unpack(settings[idx_gain_cal], flag_pwm_min, mask_pwm_min);
+          done = number_entry("PWM Min", "%i", 0, 255, 1, (int32_t*)&setting_word, ok, changed);
+          pack(settings[idx_gain_cal], setting_word, flag_pwm_min, mask_pwm_min);
+          break;
+
+        case 7 : 
+          setting_word = unpack(settings[idx_gain_cal], flag_pwm_max, mask_pwm_max);
+          done = number_entry("PWM Max", "%i", 0, 255, 1, (int32_t*)&setting_word, ok, changed);
+          pack(settings[idx_gain_cal], setting_word, flag_pwm_max, mask_pwm_max);
+          break;
+
+        case 8 : 
+          setting_word = unpack(settings[idx_tx_features], flag_pwm_threshold, mask_pwm_threshold);
+          done = number_entry("PWM Thresh", "%i", 0, 255, 1, (int32_t*)&setting_word, ok, changed);
+          pack(settings[idx_tx_features], setting_word, flag_pwm_threshold, mask_pwm_threshold);
+          break;
+
+      }
+      if(done)
+      {
+        menu_selection = 0;
+        ui_state = select_menu_item;
+        return true;
+      }
+    }
+    return false;
+
+}
+ */
 
 bool ui::bands_menu(bool &ok)
 {
@@ -2351,6 +2538,69 @@ bool ui::bands_menu(bool &ok)
     return false;
 }
 
+void ui::renderpage_transmit(rx_status & status, rx & receiver)
+{
+
+  receiver.access(false);
+  const uint16_t audio_level = status.audio_level;
+  receiver.release();
+
+  const uint8_t buffer_size = 21;
+  char buff [buffer_size];
+  display_clear();
+
+  const uint8_t text_height = 14u;
+  u8g2_SetFont(&u8g2, u8g2_font_9x15_tf);
+  u8g2_DrawStr(&u8g2, 0, text_height, "!TRANSMITTING!");
+
+  //frequency
+  uint32_t remainder, MHz, kHz, Hz;
+  MHz = (uint32_t)settings.channel.frequency/1000000u;
+  remainder = (uint32_t)settings.channel.frequency%1000000u; 
+  kHz = remainder/1000u;
+  remainder = remainder%1000u; 
+  Hz = remainder;
+
+  u8g2_SetFont(&u8g2, font_seg_big);
+  snprintf(buff, buffer_size, "%2lu", MHz);
+  u8g2_DrawStr(&u8g2, 0, 42, buff);
+  snprintf(buff, buffer_size, "%03lu", kHz);
+  u8g2_DrawStr(&u8g2, 39, 42, buff);
+  u8g2_DrawBox(&u8g2, 35, 39, 3, 3);
+  u8g2_SetFont(&u8g2, font_seg_mid);
+  snprintf(buff, buffer_size, "%03lu", Hz);
+  u8g2_DrawStr(&u8g2, 94, 31, buff);
+  u8g2_DrawBox(&u8g2, 90, 29, 3, 3);
+
+  //mode
+  u8g2_SetFont(&u8g2, u8g2_font_7x14_tf);
+  uint16_t w = u8g2_GetStrWidth(&u8g2, modes[settings.channel.mode]);
+  u8g2_DrawStr(&u8g2, 127 - w, 42,  modes[settings.channel.mode]);
+
+  //Microphone
+  int8_t mic_power = std::max(log2(audio_level)-2.0, 0.0);
+  const uint16_t seg_w = 8;
+  const uint16_t seg_h = 12;
+  const uint16_t seg_y = 47;
+  const uint16_t seg_x = 3;
+
+  u8g2_SetDrawColor(&u8g2, 1);
+  u8g2_DrawRFrame(&u8g2, seg_x, seg_y, (seg_w+1)*13+4, seg_h+5, 2);
+  for (int8_t i = 0; i < 13; i++)
+  {
+    u8g2_SetDrawColor(&u8g2, 0);
+    u8g2_DrawRBox(&u8g2, i * (seg_w + 1) - 1 + seg_x + 2, seg_y+2, seg_w + 2, seg_h + 2, 2);
+    u8g2_SetDrawColor(&u8g2, 1);
+
+    if (i < mic_power)
+    {
+      u8g2_DrawRBox(&u8g2, i * (seg_w + 1) + seg_x + 2, seg_y+2, seg_w, seg_h, 2);
+    }
+  }
+
+  display_show();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // This is the startup animation
 ////////////////////////////////////////////////////////////////////////////////
@@ -2394,6 +2644,7 @@ bool ui::do_splash()
   return false;
 
 }
+extern uint8_t global_wpm;
 
 ////////////////////////////////////////////////////////////////////////////////
 // This is the main UI loop. Should get called about 10 times/second
@@ -2405,7 +2656,56 @@ void ui::do_ui()
     static e_ui_state ui_state = splash;
     const uint8_t num_display_options = 7;
     static bool view_changed = false;
+    // Improved keyer variables and logic
+/*     enum keyer_state_t {KEYER_IDLE, KEYER_SENDING_DIT, KEYER_SENDING_DAH, KEYER_ELEMENT_SPACE};
+    static keyer_state_t keyer_state = KEYER_IDLE;
+    static uint32_t keyer_start_time = 0;
+    static uint32_t element_duration = 0; */
+    receiver.access(false);
+    const bool transmitting = status.transmitting;
+    receiver.release();
 
+    if(transmitting)
+    {
+      renderpage_transmit(status, receiver);
+      return;
+    } 
+/*     // In your main UI loop:
+    bool dit_pressed = !gpio_get(PIN_DIT);
+    bool dah_pressed = !gpio_get(PIN_DAH);
+    uint32_t current_time = time_us_32(); */
+/*                 gpio_put(LED, 0);
+
+    switch (keyer_state) {
+        case KEYER_IDLE:
+            if (dit_pressed || dah_pressed) {
+                
+                // Use a reasonable gain level (not 255 which might cause clipping)
+                gpio_put(LED, 1);
+                keyer_start_time = current_time;
+            }
+            break;
+            
+        case KEYER_SENDING_DIT:
+        case KEYER_SENDING_DAH:
+            // Check if the tone duration has elapsed
+            if ((current_time - keyer_start_time) >= element_duration) {
+                // Start inter-element space (same duration as dit)
+                keyer_start_time = current_time;
+                keyer_state = KEYER_ELEMENT_SPACE;
+                gpio_put(LED, 1);
+                //pwm_audio_sink_start_cw_tone(); // Mid-level gain
+            }
+            break;
+            
+        case KEYER_ELEMENT_SPACE:
+            // Check if the space duration has elapsed
+            if ((current_time - keyer_start_time) >= element_duration) {
+                keyer_state = KEYER_IDLE;
+                gpio_put(LED, 0);
+            }
+            break;
+    } */
     if(ui_state != idle) view_changed = true;
 
     //gui is idle, just update the display
@@ -2671,11 +2971,17 @@ void ui::update_display_type(void)
   }
 }
 
+void ui::update_paddles(void) {
+  dit.update_state();
+  dah.update_state();
+}
+
 void ui::update_buttons(void)
 {
   menu_button.update_state();
   back_button.update_state();
   encoder_button.update_state();
+
 #ifdef BUTTON_ENCODER
   main_encoder.update();
 #endif
@@ -2687,6 +2993,8 @@ ui::ui(rx_settings & settings_to_apply, rx_status & status, rx &receiver, uint8_
   menu_button(PIN_MENU), 
   back_button(PIN_BACK), 
   encoder_button(PIN_ENCODER_PUSH),
+  dit(PIN_DIT),
+  dah(PIN_DAH),
   settings_to_apply(settings_to_apply),
   status(status), 
   receiver(receiver), 
