@@ -334,7 +334,7 @@ void rx::get_spectrum(uint8_t spectrum[], uint8_t &dB10, uint8_t zoom)
 }
 
 
-rx::rx(rx_settings & settings_to_apply, rx_status & status) : dit(PIN_DIT), dah(PIN_DAH), settings_to_apply(settings_to_apply), status(status)
+rx::rx(rx_settings & settings_to_apply, rx_status & status) : dit(PIN_DIT), dah(PIN_DAH), settings_to_apply(settings_to_apply), status(status), keyer(settings_to_apply.cw_paddle, settings_to_apply.cw_speed, dit, dah)
 {
 
     settings_to_apply.suspend = false;
@@ -377,8 +377,8 @@ rx::rx(rx_settings & settings_to_apply, rx_status & status) : dit(PIN_DIT), dah(
     gpio_set_dir(LED, GPIO_OUT);
 
     //drive RF and magnitude pin to zero to make sure they are switched off
-        gpio_init(PIN_MAGNITUDE);
-gpio_set_function(PIN_MAGNITUDE, GPIO_FUNC_SIO);
+    gpio_init(PIN_MAGNITUDE);
+    gpio_set_function(PIN_MAGNITUDE, GPIO_FUNC_SIO);
     gpio_set_dir(PIN_MAGNITUDE, GPIO_OUT);
     gpio_put(PIN_MAGNITUDE, 0);
     gpio_set_function(PIN_RF, GPIO_FUNC_SIO);
@@ -596,7 +596,7 @@ void __not_in_flash_func(rx::process_block)(uint16_t adc_samples[], int16_t audi
 void __not_in_flash_func(rx::transmit)()
 {
     printf("Transmit Function Called\n");
-    gpio_set_function(MAGNITUDE_PIN, GPIO_FUNC_PWM);
+    gpio_set_function(PIN_MAGNITUDE, GPIO_FUNC_PWM);
     gpio_set_function(PIN_RF, GPIO_FUNC_PIO0);
 
     const double clock_frequency_Hz = system_clock_rate;
@@ -625,31 +625,28 @@ void __not_in_flash_func(rx::transmit)()
     // create modulator
     modulator audio_modulator;
 
+    double rf_nco_s_r = rf_nco.get_sample_frequency_Hz(clock_frequency_Hz, waveforms_per_sample);
+
     // scale FM deviation
     const double fm_deviation_Hz = 2.5e3;
     const uint32_t fm_deviation_f15 =
         round(2 * 32768.0 * fm_deviation_Hz /
-              rf_nco.get_sample_frequency_Hz(clock_frequency_Hz, waveforms_per_sample));
+              rf_nco_s_r);
 
 
     //create CW keyer
-    cw_keyer keyer(tx_cw_paddle, tx_cw_speed, rf_nco.get_sample_frequency_Hz(clock_frequency_Hz, waveforms_per_sample), dit, dah);
-
+    keyer.set_sample_rate(rf_nco_s_r, settings_to_apply.cw_speed);
     //mic gain
     //uint16_t scaled_mic_gain = 16 << tx_mic_gain;
-
     //test tone
     uint32_t test_tone_phase = 0;
     uint32_t test_tone_frequency_steps = pow(2, 32) * 100 * test_tone_frequency / sample_frequency_Hz;
 
     int32_t audio = 0;
-    int32_t pwm_audio = 0;
     uint16_t magnitude = 0;
     int16_t phase = 0;
     int16_t i = 0; // not used in this design
     int16_t q = 0; // not used in this design
-    int16_t audio_samples[PWM_AUDIO_NUM_SAMPLES];
-    int audio_buff_idx = 0;
     gpio_put(LED, 1);
     while (ptt()) {
       
@@ -661,18 +658,8 @@ void __not_in_flash_func(rx::transmit)()
       }
       else
       {
+        
         audio = keyer.get_sample();
-        pwm_audio = sin_table[test_tone_phase >> 21];
-        test_tone_phase += test_tone_frequency_steps;
-        pwm_audio = audio;
-      if(audio_buff_idx >= PWM_AUDIO_NUM_SAMPLES) {
-          printf("PWM_AUDIO_SINK_TX_PUSH==============\n");
-          pwm_audio_sink_push(audio_samples, settings_to_apply.volume);
-          audio_buff_idx = 0;
-      } else {
-        audio_samples[audio_buff_idx++] = pwm_audio;
-        printf("AUDIO_PWM_SINK_ADD_ENTRY===========%ld\n", audio);
-      }
         /* if(transmit_mode == CW)
         {
         } */
@@ -686,10 +673,13 @@ void __not_in_flash_func(rx::transmit)()
       tx_audio_level = tx_audio_level - (tx_audio_level >> 5) + (abs(audio) >> 5);
 
       // demodulate
-      audio_modulator.process_sample(transmit_mode, audio, i, q, magnitude, phase, fm_deviation_f15);
-
+      audio_modulator.process_sample(settings_to_apply.mode, audio, i, q, magnitude, phase, fm_deviation_f15);
+      uint8_t pwm_min = 0;
+      uint8_t pwm_max = 255; 
+      uint8_t pwm_threshold = 1;  // minimal threshold for testing
       // output magnitude
-      magnitude_pwm.output_sample(magnitude, settings_to_apply.pwm_min, settings_to_apply.pwm_max, settings_to_apply.pwm_threshold);
+      magnitude_pwm.output_sample(magnitude, pwm_min, pwm_max, pwm_threshold);
+      printf("KEYER OUT: %ld, MAGNITUDE: %d\n", audio, magnitude);
 
       // output phase // TODO: USE SI5351
       //rf_nco.output_sample(phase, waveforms_per_sample);
@@ -698,8 +688,6 @@ void __not_in_flash_func(rx::transmit)()
       update_status();
     }
     gpio_put(LED, 0);
-    gpio_set_function(MAGNITUDE_PIN, GPIO_FUNC_SIO);
-    gpio_set_function(PIN_RF, GPIO_FUNC_SIO);
 
 }
 

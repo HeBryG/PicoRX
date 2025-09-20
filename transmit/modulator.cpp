@@ -33,8 +33,11 @@ void __not_in_flash_func(modulator ::process_sample)(uint8_t mode, int16_t audio
     magnitude = audio + 32767;
     phase = 0;
   } else if (mode == CW) {
-    magnitude = audio * 2;
-    phase = 0;
+    // 'audio' is actually the keyer envelope (0..32767)
+    magnitude = (uint16_t)audio << 1;   // scale to 0..65534
+    if (magnitude > 65535) magnitude = 65535;
+    phase = 0;  // carrier not shifted
+
   } else if (mode == FM) {
     magnitude = 65535;
     phase = last_phase + ((audio * fm_deviation_f15) >> 15);

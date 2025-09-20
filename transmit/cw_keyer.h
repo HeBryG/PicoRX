@@ -12,6 +12,7 @@ enum e_keyer_state {IDLE, DIT, DAH, DIT_SPACE, DAH_SPACE, SPACE};
 
 class cw_keyer
 {
+  bool audio_on = false; // true when tone should play
 
   uint16_t counter = 0;
   bool both_pressed = false;
@@ -30,7 +31,11 @@ class cw_keyer
   button &dah;
 
   public:
-  cw_keyer(uint8_t paddle_type, uint8_t paris_wpm, uint32_t sample_rate_Hz, button &dit, button &dah);
+  void init_sine_table();
+  void generate_tone_block(int16_t *buffer);
+  void generate_silence_block(int16_t *buffer);
+  void set_sample_rate(uint32_t sample_rate_Hz, uint8_t paris_wpm);
+  cw_keyer(uint8_t paddle_type, uint8_t paris_wpm, button &dit, button &dah);
   int16_t get_sample();
 
 };

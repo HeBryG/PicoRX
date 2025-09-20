@@ -18,6 +18,9 @@
 #include "button.h"
 #include "rx_definitions.h"
 #include "rx_dsp.h"
+#include "transmit/transmit_nco.h"
+#include "transmit/cw_keyer.h"
+#include "transmit/pwm.h"
 
 struct rx_settings
 {
@@ -170,6 +173,7 @@ class rx
   void set_alarm_pool(alarm_pool_t *p);
   rx_settings &settings_to_apply;
   rx_status &status;
+  cw_keyer keyer;
   rx_dsp rx_dsp_inst;
   void read_batt_temp();
   void access(bool settings_changed);

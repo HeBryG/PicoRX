@@ -7,6 +7,7 @@
 #include <math.h>
 #include "keyer.pio.h"
 
+
 // --- CW tone parameters ---
 #define CW_TONE_FREQUENCY 700 // Hz
 #define WPM 15
@@ -14,8 +15,6 @@ const uint32_t dit_length = 1200 / WPM;
 const uint32_t dah_length = 3 * dit_length;
 
 
-static float phase = 0.0f;
-static float phase_inc = 0.0f;
 static volatile uint32_t tone_remaining_buffers = 0;
 static repeating_timer_t tone_timer;
 

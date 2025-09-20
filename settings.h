@@ -135,9 +135,9 @@ const s_settings default_settings = {
   0x55, //pwm_max
   10,   //test_tone_frequency
   1,    //cw_paddle;
-  0,    //cw_speed;
+  1,    //cw_speed;
   0,    //mic_gain;
-  0,    //pwm_threshold;
+  1,    //pwm_threshold;
   45, //if_frequency_hz_over_100 = 4500Hz
   2,  //if_mode = nearest
   2,  //noise_estimation very_fast, fast, normal, slow, very_slow
@@ -149,9 +149,9 @@ const s_settings default_settings = {
   0,  //aux_view
   0,  //usb_stream
   0,  //enable_auto_notch
-  0,  //iq_correction
+  1,  //iq_correction
   0,  //enable_noise_reduction
-  0,  //reverse_encoder
+  1,  //reverse_encoder
   0,  //encoder_resolution
   0,  //swap_iq
   0,  //flip_oled
