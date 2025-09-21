@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include "decode_sstv.h"
-#include "cordic.h"
+#include "codecs/cordic.h"
 
 //from the sample number work out the colour and x/y coordinates
 void c_sstv_decoder :: sample_to_pixel(uint16_t &x, uint16_t &y, uint8_t &colour, int32_t image_sample)
@@ -303,12 +303,12 @@ bool c_sstv_decoder :: decode_iq(int16_t sample_i, int16_t sample_q, uint16_t &p
   smoothed_sample = ((smoothed_sample << 3) + sample - smoothed_sample) >> 3;
   smoothed_sample_16 = std::min(std::max(smoothed_sample, (uint32_t)1000u), (uint32_t)2500u);
 
-  e_state debug_state;
+  e_sstv_state debug_state;
   return decode(smoothed_sample_16, pixel_y, pixel_x, pixel_colour, pixel, debug_state);
 
 }
 
-bool c_sstv_decoder :: decode(uint16_t sample, uint16_t &pixel_y, uint16_t &pixel_x, uint8_t &pixel_colour, uint8_t &pixel, e_state &debug_state)
+bool c_sstv_decoder :: decode(uint16_t sample, uint16_t &pixel_y, uint16_t &pixel_x, uint8_t &pixel_colour, uint8_t &pixel, e_sstv_state &debug_state)
 {
 
 

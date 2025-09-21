@@ -21,7 +21,7 @@ enum e_sync_state
   confirm,
 };
 
-enum e_state
+enum e_sstv_state
 {
   detect_sync,
   confirm_sync,
@@ -55,7 +55,7 @@ class c_sstv_decoder
   uint32_t last_hsync_sample = 0;
   uint32_t sample_number = 0;
   uint32_t confirmed_sync_sample = 0;
-  e_state state = detect_sync;
+  e_sstv_state state = detect_sync;
   e_sync_state sync_state = detect;
   void sample_to_pixel(uint16_t &x, uint16_t &y, uint8_t &colour, int32_t image_sample);
   uint8_t frequency_to_brightness(uint16_t x);
@@ -73,7 +73,7 @@ class c_sstv_decoder
 
   public:
   c_sstv_decoder(float Fs);
-  bool decode(uint16_t sample, uint16_t &line, uint16_t &col, uint8_t &colour, uint8_t &pixel, e_state &debug_state);
+  bool decode(uint16_t sample, uint16_t &line, uint16_t &col, uint8_t &colour, uint8_t &pixel, e_sstv_state &debug_state);
   bool decode_iq(int16_t sample_i, int16_t sample_q, uint16_t &pixel_y, uint16_t &pixel_x, uint8_t &pixel_colour, uint8_t &pixel, int16_t &frequency);
   bool decode_audio(int16_t audio, uint16_t &pixel_y, uint16_t &pixel_x, uint8_t &pixel_colour, uint8_t &pixel, int16_t &frequency);
   void set_timeout_seconds(uint8_t timeout);

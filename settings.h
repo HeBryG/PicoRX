@@ -103,7 +103,7 @@ const s_settings default_settings = {
   7074000,  //frequency
   30000000, //max_frequency
   0,        //min_frequency
-  2,        //mode = LSB
+  5,        //mode = LSB
   3,        //agc_setting = very_slow
   10,       //agc_gain
   4,        //step = 1kHz
@@ -135,7 +135,7 @@ const s_settings default_settings = {
   0x55, //pwm_max
   10,   //test_tone_frequency
   1,    //cw_paddle;
-  1,    //cw_speed;
+  10,    //cw_speed;
   0,    //mic_gain;
   1,    //pwm_threshold;
   45, //if_frequency_hz_over_100 = 4500Hz

@@ -2670,42 +2670,7 @@ void ui::do_ui()
       renderpage_transmit(status, receiver);
       return;
     } 
-/*     // In your main UI loop:
-    bool dit_pressed = !gpio_get(PIN_DIT);
-    bool dah_pressed = !gpio_get(PIN_DAH);
-    uint32_t current_time = time_us_32(); */
-/*                 gpio_put(LED, 0);
 
-    switch (keyer_state) {
-        case KEYER_IDLE:
-            if (dit_pressed || dah_pressed) {
-                
-                // Use a reasonable gain level (not 255 which might cause clipping)
-                gpio_put(LED, 1);
-                keyer_start_time = current_time;
-            }
-            break;
-            
-        case KEYER_SENDING_DIT:
-        case KEYER_SENDING_DAH:
-            // Check if the tone duration has elapsed
-            if ((current_time - keyer_start_time) >= element_duration) {
-                // Start inter-element space (same duration as dit)
-                keyer_start_time = current_time;
-                keyer_state = KEYER_ELEMENT_SPACE;
-                gpio_put(LED, 1);
-                //pwm_audio_sink_start_cw_tone(); // Mid-level gain
-            }
-            break;
-            
-        case KEYER_ELEMENT_SPACE:
-            // Check if the space duration has elapsed
-            if ((current_time - keyer_start_time) >= element_duration) {
-                keyer_state = KEYER_IDLE;
-                gpio_put(LED, 0);
-            }
-            break;
-    } */
     if(ui_state != idle) view_changed = true;
 
     //gui is idle, just update the display

@@ -165,6 +165,8 @@ class rx
   uint8_t stream_raw_iq;
 
   public:
+
+  void transmit_cw();       // Add this for CW mode
   rx(rx_settings & settings_to_apply, rx_status & status);
   void apply_settings();
   void run();

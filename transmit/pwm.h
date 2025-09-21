@@ -20,12 +20,14 @@
 
 class pwm {
 private:
-  uint8_t m_magnitude_pin;
+    uint8_t m_magnitude_pin;
+    uint m_pwm_slice;        // Add this
+    uint m_pwm_channel;      // Add this
 
 public:
-  pwm(const uint8_t magnitude_pin);
-  ~pwm();
-  void output_sample(uint16_t magnitude, const uint8_t pwm_min, const uint8_t pwm_max, const uint8_t pwm_threshold);
+    pwm(const uint8_t magnitude_pin);
+    ~pwm();
+    void output_sample(uint16_t magnitude, uint8_t pwm_min, uint8_t pwm_max, uint8_t pwm_threshold);
 };
 
 #endif
