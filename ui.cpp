@@ -2110,7 +2110,7 @@ bool ui::transmit_menu(bool &ok)
     //chose menu item
     if(ui_state == select_menu_item)
     {
-      if(menu_entry("Transmit", "MIC Gain#Test Tone\nEnable#Test Tone\nFrequency#CW Paddle#CW Speed#Modulation#PWM\nMinimum#PWM\nMaximum#PWM\nThreshold#", &menu_selection, ok))
+      if(menu_entry("Transmit", "MIC Gain#Test Tone\nEnable#Test Tone\nFrequency#CW Paddle#CW Speed#Modulation#PWM\nMinimum#PWM\nMaximum#PWM\nThreshold#RX isolation#", &menu_selection, ok))
       {
         if(ok) 
         {
@@ -2162,6 +2162,9 @@ bool ui::transmit_menu(bool &ok)
           break;
         case 8 : 
           done = number_entry("PWM Thresh", "%i", 0, 255, 1, settings.global.pwm_threshold, ok, changed);
+          break;
+        case 9 : 
+          done = bit_entry("RX isolation", "Off#On#", settings.global.rx_isolation, ok);
           break;
       }
 

@@ -56,6 +56,7 @@ bool quad_si5351 :: initialise(i2c_inst_t *i2c, uint8_t sda_pin, uint8_t scl_pin
     };
     int ret = i2c_write_blocking(m_i2c, m_address, reset_sequence, 9, false);  
     return ret != PICO_ERROR_GENERIC;
+  init_clk2();
 
 }
 
@@ -292,4 +293,127 @@ double quad_si5351 :: set_frequency_hz_low(uint32_t frequency_Hz)
   m_rdiv = rdiv;
 
   return exact_frequency;
+}
+
+
+// CLK2 initialization - sets up independent clock output for CW/transmit
+void quad_si5351::init_clk2()
+{
+    // Add small delay for I2C stability
+    //sleep_us(1000);
+    
+    // Configure CLK2 control register with proper drive strength
+    // 0x4C = MS2 as source, not inverted, powered up, integer mode
+    write_reg(SI_CLK2_CONTROL, 0x4C | SI_CLK_SRC_PLL_B | m_drive_strength);
+    
+    //sleep_us(100);
+    
+    // Initialize CLK2 phase offset to 0
+    configure_phase_offset(2, 0);
+    
+    //sleep_us(100);
+    
+    // Start with CLK2 disabled (will be enabled when needed)
+    clk2_output_enable(false);
+    m_clk2_enabled = false;
+    printf("CLK2 initialized with drive strength %d\n", m_drive_strength);
+}
+
+// Enhanced write_reg with error checking (add this version or modify existing)
+void quad_si5351::write_reg_safe(uint8_t address, uint8_t data)
+{
+    const uint8_t command[] = {address, data};
+    int result = i2c_write_blocking(m_i2c, m_address, command, 2, false);
+    
+    if (result == PICO_ERROR_GENERIC || result == PICO_ERROR_TIMEOUT) {
+        printf("I2C ERROR: Failed to write reg 0x%02X = 0x%02X (result=%d)\n", 
+               address, data, result);
+        
+        // Attempt I2C bus recovery
+        sleep_us(1000);  // 10ms delay
+        
+        // Try once more
+        result = i2c_write_blocking(m_i2c, m_address, command, 2, false);
+        printf("I2C RETRY: result=%d\n", result);
+    }
+}
+
+// Set CLK2 frequency with enhanced error handling
+double quad_si5351::set_clk2_frequency_hz(uint32_t frequency_Hz)
+{
+    // printf("Setting CLK2 frequency to %lu Hz\n", frequency_Hz);
+    
+    // Use PLL B for CLK2 to avoid interference with quadrature clocks on PLL A
+    uint32_t divider = 2*((600000000+(2*frequency_Hz))/(2*frequency_Hz));
+    const uint32_t pll_frequency = divider * frequency_Hz;
+    
+    // Calculate PLL B multiplier
+    const uint32_t multiplier_integer_part = pll_frequency / m_crystal_frequency_Hz;
+    const uint64_t multiplier_fractional_part = pll_frequency % m_crystal_frequency_Hz;
+    const uint32_t multiplier_denominator = 1048575u;
+    const uint64_t multiplier_numerator = (multiplier_fractional_part * multiplier_denominator) / m_crystal_frequency_Hz;
+    const double exact_pll_frequency = m_crystal_frequency_Hz * (multiplier_integer_part + ((double)multiplier_numerator/multiplier_denominator));
+    const double exact_frequency = exact_pll_frequency/divider;
+    if (frequency_Hz == m_clk2_frequency) {
+        return exact_frequency;
+    }    
+    printf("Setting CLK2 frequency to %lu Hz\n", frequency_Hz);  // Move here
+    printf("PLL B: mult=%lu.%llu/%lu, div=%lu\n", 
+          multiplier_integer_part, multiplier_numerator, multiplier_denominator, divider);
+    
+    // Configure PLL B for CLK2 with error checking
+    configure_pll(SI_SYNTH_PLL_B, multiplier_integer_part, multiplier_numerator, multiplier_denominator);
+    //sleep_us(100);
+    
+    // Configure multisynth 2 for CLK2
+    configure_multisynth(SI_SYNTH_MS_2, divider, SI_R_DIV_1);
+    //sleep_us(100);
+    
+    // Reset PLL B only - avoid affecting PLL A
+    write_reg(SI_PLL_RESET, 0x80);  // Reset PLL B only
+    //sleep_us(500);  // Wait for PLL to stabilize
+    
+    // Update CLK2 control register
+    write_reg(SI_CLK2_CONTROL, 0x4C | SI_CLK_SRC_PLL_B | m_drive_strength);
+    //sleep_us(100);
+    
+    m_clk2_frequency = frequency_Hz;
+    
+    printf("CLK2 configured: %.1f Hz (requested %lu Hz)\n", exact_frequency, frequency_Hz);
+    return exact_frequency;
+}
+
+
+//  keep quadrature clocks always enabled, only control CLK2
+void quad_si5351::clk2_output_enable(bool enable)
+{
+    if (enable && !m_clk2_enabled) {
+        // Enable CLK2 while keeping CLK0,CLK1 enabled for RX
+        write_reg(SI_OUPUT_ENABLE, 0xF8);  // CLK0,CLK1,CLK2 enabled (bits 0,1,2 = 0)
+        m_clk2_enabled = true;
+        printf("CLK2 output ENABLED\n");
+    } else if (!enable && m_clk2_enabled) {
+        // Disable only CLK2, keep CLK0,CLK1 enabled for RX
+        write_reg(SI_OUPUT_ENABLE, 0xFC);  // CLK0,CLK1 enabled, CLK2 disabled (bit 2 = 1)
+        m_clk2_enabled = false;
+        printf("CLK2 output DISABLED\n");
+    }
+    
+    // Add delay for I2C bus recovery
+    //sleep_us(1000);
+}
+
+// Set CLK2 phase offset (0-127, where 127 = 180 degrees)
+void quad_si5351::set_clk2_phase(uint8_t phase_offset)
+{
+    // Phase offset only works with integer dividers
+    // Each step = 360° / (4 * divider)
+    // For most applications, phase_offset of 0-127 covers 0-180 degrees
+    configure_phase_offset(2, phase_offset & 0x7F);
+    
+    // Phase change requires PLL reset to take effect
+    write_reg(SI_PLL_RESET, 0x80);  // Reset PLL B only
+    
+    // printf("CLK2 phase set to %d (%.1f degrees)\n", 
+    //        phase_offset, (phase_offset * 180.0) / 127.0);
 }

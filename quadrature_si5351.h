@@ -13,12 +13,15 @@
 #define SI_SYNTH_MS_1		50
 #define SI_SYNTH_MS_2		58
 #define SI_PLL_RESET		177
-
+#define SI_CLK2_CONTROL     18
+#define SI_SYNTH_PLL_B      34
+#define SI_SYNTH_MS_2       58
+#define SI_CLK_SRC_PLL_B    0x20
 #define SI_R_DIV_1		0b00000000			// R-division ratio definitions
 #define SI_R_DIV_32		0b01010000
 
 #define SI_CLK_SRC_PLL_A	0b00000000
-#define SI_CLK_SRC_PLL_B	0b00100000
+//#define SI_CLK_SRC_PLL_B	0b00100000
 
 const bool low_mode = false;
 const bool high_mode = true;
@@ -43,17 +46,20 @@ class quad_si5351
   bool m_pll_needs_reset = true;
   bool m_mode = low_mode;
   uint8_t m_drive_strength;
-   
-
+  uint32_t m_clk2_frequency = 0;
+  
   public:
   bool initialise(i2c_inst_t *i2c, uint8_t sda_pin, uint8_t scl_pin, uint8_t address, uint32_t crystal_frequency_hz);
   void write_reg(uint8_t address, uint8_t data);
-
   double set_frequency_hz(uint32_t frequency);
+  bool m_clk2_enabled = false;
   void start();
   void stop();
   void set_drive(uint8_t drive_strength);
-
+  void init_clk2();
+  double set_clk2_frequency_hz(uint32_t frequency_Hz);
+  void clk2_output_enable(bool enable);
+  void set_clk2_phase(uint8_t phase_offset);
   void crystal_load(uint8_t load);
-
+  void write_reg_safe(uint8_t address, uint8_t data);  // Optional enhanced version
 };

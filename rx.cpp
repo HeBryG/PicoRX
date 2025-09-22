@@ -119,6 +119,7 @@ void rx::tune()
       if_mode = settings_to_apply.if_mode;
       if_frequency_hz_over_100 = settings_to_apply.if_frequency_hz_over_100;
       nco_frequency_Hz = external_nco.set_frequency_hz(adjusted_tuned_frequency_Hz + ((uint16_t)if_frequency_hz_over_100*100));
+      external_nco.set_clk2_frequency_hz(adjusted_tuned_frequency_Hz);
       offset_frequency_Hz = adjusted_tuned_frequency_Hz - nco_frequency_Hz;
       rx_dsp_inst.set_frequency_offset_Hz(offset_frequency_Hz);
     }
@@ -284,7 +285,14 @@ void rx::apply_settings()
       //apply mode
       rx_dsp_inst.set_mode(settings_to_apply.mode, settings_to_apply.bandwidth);
 
+      if (settings_to_apply.rx_isolation) gpio_put(PIN_PTT, 1);
+      else gpio_put(PIN_PTT, 0);
 
+      if(settings_to_apply.test_tone_enable) {
+        external_nco.clk2_output_enable(true);
+      } else {
+        external_nco.clk2_output_enable(false);
+      }
       //apply volume
       static const int16_t gain[] = {
         0,   // 0 = 0/256 -infdB
@@ -374,8 +382,8 @@ rx::rx(rx_settings & settings_to_apply, rx_status & status) : dit(PIN_DIT), dah(
     //Configure PIN_PTT
     gpio_init(PIN_PTT);
     gpio_set_function(PIN_PTT, GPIO_FUNC_SIO);
-    gpio_set_dir(PIN_PTT, GPIO_IN);
-    gpio_pull_up(PIN_PTT);
+    gpio_set_dir(PIN_PTT, GPIO_OUT);
+    //gpio_pull_up(PIN_PTT);
     gpio_init(LED);
     gpio_set_function(LED, GPIO_FUNC_SIO);
     gpio_set_dir(LED, GPIO_OUT);
@@ -490,7 +498,7 @@ bool __not_in_flash_func(rx::ptt)()
   static uint16_t timer = 0;
   
   //while transmitting this gets called about 10000 times per second
-  if((dit.is_keyed() || dah.is_keyed()) && (transmit_mode == CW)) timer = 1000;
+  if((dit.is_keyed() || dah.is_keyed()) && (transmit_mode == CW)) timer = 500;
   else if(timer) timer--;
   bool isptt;
   if(timer != 0) //force ptt because dit/dah is recently keyed
@@ -611,8 +619,7 @@ void __not_in_flash_func(rx::transmit_cw)()
     
     // Enable external oscillator/PLL for RF carrier
     gpio_put(LED, 1);
-
-    
+    external_nco.clk2_output_enable(true);
     // CW transmission loop
     while (ptt()) {
         // Get envelope from CW keyer (0-32767)
@@ -630,7 +637,9 @@ void __not_in_flash_func(rx::transmit_cw)()
         
         // Output PWM-controlled envelope to PA
         magnitude_pwm.output_sample(magnitude, pwm_min, pwm_max, pwm_threshold);
+        // Immediate clk disable, experimental
         
+    
         // Update status for UI
         update_status();
         
@@ -644,7 +653,7 @@ void __not_in_flash_func(rx::transmit_cw)()
     
     // Ensure PWM is off
     magnitude_pwm.output_sample(0, pwm_min, pwm_max, pwm_threshold);
-    
+    external_nco.clk2_output_enable(false);
     printf("CW Transmit Complete\n");
 }
 
@@ -746,7 +755,6 @@ void rx::run()
     {
       if(settings_changed) apply_settings();
 
-
       //read other adc channels when streaming is not running
       uint32_t timeout = 15000;
       read_batt_temp();
@@ -772,6 +780,7 @@ void rx::run()
       {
           //exchange data with UI (runing in core 0)
           update_status();
+
 
           //periodically (or when requested) suspend streaming
           if(timeout-- == 0 || suspend || settings_changed || ptt())

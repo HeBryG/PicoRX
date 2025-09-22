@@ -68,6 +68,7 @@ struct rx_settings
   uint8_t pwm_min;
   uint8_t pwm_max;
   uint8_t pwm_threshold;
+  bool rx_isolation;
 };
 
 struct rx_status

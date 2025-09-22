@@ -89,7 +89,7 @@ struct s_global_settings
   bool    test_tone_enable;
   bool    tx_modulation;
   bool    enable_external_nco;
-
+  bool    rx_isolation;
 };
 
 struct s_settings
@@ -159,6 +159,7 @@ const s_settings default_settings = {
   0,  //enable_test_tone
   0,  //tx_modulation
   1,  //enable_external_nco
+  0,  // RX isolastion
 }};
 
 
