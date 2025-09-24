@@ -75,6 +75,7 @@ set(SRCS
     transmit/modulator.cpp
     transmit/signal_generator.cpp
     transmit/cw_keyer.cpp
+    transmit/cw_decoder.cpp
 )
 
 if(BUTTON_ENCODER)

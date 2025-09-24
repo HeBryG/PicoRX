@@ -18,6 +18,7 @@
 #include "transmit/transmit_nco.h"
 #include "transmit/modulator.h"
 #include "transmit/cw_keyer.h"
+#include "transmit/cw_decoder.h"
 
 extern "C" {
   #include "si5351.h"
@@ -99,6 +100,7 @@ void rx::tune()
     if(!external_nco_initialised)
     {
       external_nco_good = external_nco.initialise(OLED_I2C_INST, PIN_DISPLAY_SDA, PIN_DISPLAY_SCL, 0x60, 25000000);
+
       external_nco.set_drive(3);
       external_nco.crystal_load(3);
       external_nco.start();
@@ -211,53 +213,29 @@ void rx::apply_settings()
    if(sem_try_acquire(&settings_semaphore))
    {
 
-      if(tuned_frequency_Hz > (settings_to_apply.band_7_limit * 125000))
+      if(tuned_frequency_Hz > (settings_to_apply.band_1_limit * 125000))
       {
         gpio_put(PIN_BAND_0, 0);
         gpio_put(PIN_BAND_1, 0);
-        gpio_put(PIN_BAND_2, 0);
-      }
-      else if(tuned_frequency_Hz > (settings_to_apply.band_6_limit * 125000))
-      {
-        gpio_put(PIN_BAND_0, 1);
-        gpio_put(PIN_BAND_1, 0);
-        gpio_put(PIN_BAND_2, 0);
-      }
-      else if(tuned_frequency_Hz > (settings_to_apply.band_5_limit * 125000))
-      {
-        gpio_put(PIN_BAND_0, 0);
-        gpio_put(PIN_BAND_1, 1);
-        gpio_put(PIN_BAND_2, 0);
-      }
-      else if(tuned_frequency_Hz > (settings_to_apply.band_4_limit * 125000))
-      {
-        gpio_put(PIN_BAND_0, 1);
-        gpio_put(PIN_BAND_1, 1);
-        gpio_put(PIN_BAND_2, 0);
-      }
-      else if(tuned_frequency_Hz > (settings_to_apply.band_3_limit * 125000))
-      {
-        gpio_put(PIN_BAND_0, 0);
-        gpio_put(PIN_BAND_1, 0);
-        gpio_put(PIN_BAND_2, 1);
+        //gpio_put(PIN_BAND_2, 0);
       }
       else if(tuned_frequency_Hz > (settings_to_apply.band_2_limit * 125000))
       {
         gpio_put(PIN_BAND_0, 1);
         gpio_put(PIN_BAND_1, 0);
-        gpio_put(PIN_BAND_2, 1);
+        //gpio_put(PIN_BAND_2, 0);
       }
-      else if(tuned_frequency_Hz > (settings_to_apply.band_1_limit * 125000))
+      else if(tuned_frequency_Hz > (settings_to_apply.band_3_limit * 125000))
       {
         gpio_put(PIN_BAND_0, 0);
         gpio_put(PIN_BAND_1, 1);
-        gpio_put(PIN_BAND_2, 1);
+        //gpio_put(PIN_BAND_2, 0);
       }
       else
       {
         gpio_put(PIN_BAND_0, 1);
         gpio_put(PIN_BAND_1, 1);
-        gpio_put(PIN_BAND_2, 1);
+        //gpio_put(PIN_BAND_2, 0);
       }
 
 
@@ -288,11 +266,7 @@ void rx::apply_settings()
       if (settings_to_apply.rx_isolation) gpio_put(PIN_PTT, 1);
       else gpio_put(PIN_PTT, 0);
 
-      if(settings_to_apply.test_tone_enable) {
-        external_nco.clk2_output_enable(true);
-      } else {
-        external_nco.clk2_output_enable(false);
-      }
+      
       //apply volume
       static const int16_t gain[] = {
         0,   // 0 = 0/256 -infdB
@@ -328,6 +302,7 @@ void rx::apply_settings()
       stream_raw_iq = settings_to_apply.stream_raw_iq;
       transmit_mode = settings_to_apply.mode;
       tx_cw_paddle = settings_to_apply.cw_paddle;
+      keyer.change_paddle_type(settings_to_apply.cw_paddle);
       tx_cw_speed = settings_to_apply.cw_speed;
       tx_mic_gain = settings_to_apply.mic_gain;
       tx_modulation = settings_to_apply.tx_modulation;
@@ -613,20 +588,23 @@ void __not_in_flash_func(rx::transmit_cw)()
     pwm magnitude_pwm(PIN_MAGNITUDE);
     
     // Get transmit parameters from settings
-    const uint8_t pwm_min = 0;
-    const uint8_t pwm_max = 254; 
+    const uint8_t pwm_min = 30;
+    const uint8_t pwm_max = 160; 
     const uint8_t pwm_threshold = 1;
     
     // Enable external oscillator/PLL for RF carrier
     gpio_put(LED, 1);
+    gpio_put(PIN_PTT, 0);
     external_nco.clk2_output_enable(true);
     // CW transmission loop
     while (ptt()) {
+        // Handle keyer monitor/sidetone generation
+        keyer.handle_keyer_monitor();
+
         // Get envelope from CW keyer (0-32767)
         int32_t keyer_envelope = keyer.get_sample();
         
-        // Handle keyer monitor/sidetone generation
-        keyer.handle_keyer_monitor();
+        
         
         // Update audio level indicator
         tx_audio_level = tx_audio_level - (tx_audio_level >> 5) + (abs(keyer_envelope) >> 5);
@@ -654,6 +632,7 @@ void __not_in_flash_func(rx::transmit_cw)()
     // Ensure PWM is off
     magnitude_pwm.output_sample(0, pwm_min, pwm_max, pwm_threshold);
     external_nco.clk2_output_enable(false);
+    gpio_put(PIN_PTT, 1);
     printf("CW Transmit Complete\n");
 }
 
@@ -750,7 +729,7 @@ void rx::run()
     // to save compute
     bool ret = alarm_pool_add_repeating_timer_us(pool, 1067 / 2, usb_callback, NULL, &usb_timer);
     hard_assert(ret);
-
+    cw_decoder_init(20);
     while(true)
     {
       if(settings_changed) apply_settings();

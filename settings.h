@@ -159,7 +159,7 @@ const s_settings default_settings = {
   0,  //enable_test_tone
   0,  //tx_modulation
   1,  //enable_external_nco
-  0,  // RX isolastion
+  1,  // RX isolation, 2N7002 rx switch, for rx should be active. When TXing disable it(Currently is PIN_PTT but should be changed name for more clarity)
 }};
 
 

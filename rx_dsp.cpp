@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "pico/stdlib.h"
 #include "cic_corrections.h"
+#include "transmit/cw_decoder.h"
 
 #include <math.h>
 #include <cstdio>
@@ -285,7 +286,13 @@ uint16_t __not_in_flash_func(rx_dsp :: process_block)(uint16_t samples[], int16_
 
     //squelch
     audio = squelch(audio, signal_amplitude);
-
+    static uint32_t sample_time = 0;
+    cw_decoder_process(audio, sample_time++);    
+    // Check for decoded characters TODO: Display on screen instead of printf
+    char decoded = cw_decoder_get_char();
+    if (decoded) {
+        printf("%c", decoded);
+    }
     //output raw audio
     audio_samples[idx] = audio;
   }
