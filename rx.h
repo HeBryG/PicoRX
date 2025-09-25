@@ -12,10 +12,15 @@
 #include "hardware/adc.h"
 #include "hardware/pwm.h"
 #include "hardware/dma.h"
+#include "hardware/sync.h"
 #include "quadrature_si5351.h"
 
+#include "button.h"
 #include "rx_definitions.h"
 #include "rx_dsp.h"
+#include "transmit/transmit_nco.h"
+#include "transmit/cw_keyer.h"
+#include "transmit/pwm.h"
 
 struct rx_settings
 {
@@ -53,6 +58,24 @@ struct rx_settings
   uint8_t spectrum_smoothing;
   bool enable_external_nco;
   bool stream_raw_iq;
+
+  bool test_tone_enable;
+  uint8_t test_tone_frequency;
+  uint8_t cw_paddle;
+  uint8_t cw_speed;
+  uint8_t mic_gain;
+  bool tx_modulation;
+  uint8_t pwm_min;
+  uint8_t pwm_max;
+  uint8_t pwm_threshold;
+  bool rx_isolation;
+  bool    cw_decoder;
+  uint8_t cw_decoder_tone_freq;
+  uint8_t cw_decoder_wpm;
+  uint8_t cw_decoder_m_limit;
+  uint8_t cw_decoder_m_l_limit;
+  uint8_t cw_decoder_sampl_freq;
+  uint8_t cw_decoder_nb_ms;
 };
 
 struct rx_status
@@ -83,7 +106,7 @@ class rx
   double offset_frequency_Hz;
   semaphore_t settings_semaphore;
   bool settings_changed;
-  bool suspend;
+  volatile bool suspend;
   uint16_t temp;
   uint16_t battery;
   uint8_t if_frequency_hz_over_100;
@@ -127,10 +150,31 @@ class rx
   bool external_nco_active = false;
   bool internal_nco_active = true;
 
+  void pwm_ramp_down();
+  void pwm_ramp_up();
+    //Transmit
+  button dit;
+  button dah;
+  uint8_t transmit_mode;
+  void transmit();
+  bool ptt();
+  bool test_tone_enable;
+  uint8_t test_tone_frequency;
+  uint8_t tx_cw_paddle;
+  uint8_t tx_cw_speed;
+  uint8_t tx_mic_gain;
+  bool tx_modulation;
+  uint16_t tx_audio_level=0;
+  uint8_t tx_pwm_min;
+  uint8_t tx_pwm_max;
+  uint8_t tx_pwm_threshold;
+  
   // USB streaming mode
   uint8_t stream_raw_iq;
 
   public:
+
+  void transmit_cw();       // Add this for CW mode
   rx(rx_settings & settings_to_apply, rx_status & status);
   void apply_settings();
   void run();
@@ -139,6 +183,7 @@ class rx
   void set_alarm_pool(alarm_pool_t *p);
   rx_settings &settings_to_apply;
   rx_status &status;
+  cw_keyer keyer;
   rx_dsp rx_dsp_inst;
   void read_batt_temp();
   void access(bool settings_changed);
@@ -146,5 +191,4 @@ class rx
   bool get_raw_data(int16_t &i, int16_t &q);
   uint32_t get_iq_buffer_level();
 };
-
 #endif

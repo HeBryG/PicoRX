@@ -24,8 +24,8 @@ const uint8_t PIN_AUDIO        = 15; //PWM channel 7B
 
 const uint8_t PIN_NCO_1        = 18;
 const uint8_t PIN_NCO_2        = 19;
-
-const uint8_t PIN_MAGNITUDE    = 17; //shared pin, changes use in polar/rectangular mode
+const uint8_t MAGNITUDE_PIN = 5;
+const uint8_t PIN_MAGNITUDE    = 5; //shared pin, changes use in polar/rectangular mode
 const uint8_t PIN_RF           = 19; //must be HSTX capable
 const uint8_t PIN_TX_Q         = 32; //PWM channel 6A
 const uint8_t PIN_CS           = 33;

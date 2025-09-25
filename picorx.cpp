@@ -54,6 +54,7 @@ int main()
 
   while(1)
   {
+    user_interface.update_paddles();
     //schedule tasks
     if (time_us_32() - last_buttons_update > BUTTONS_REFRESH_US) 
     {
@@ -79,6 +80,9 @@ int main()
     {
       last_waterfall_update = time_us_32();
       waterfall_inst.update_spectrum(receiver, user_interface.get_settings(), settings_to_apply, status, spectrum, dB10, zoom);
+      if (settings_to_apply.cw_decoder) {
+        user_interface.display_decoded_cw();
+      }
     }
 
 

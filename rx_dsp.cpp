@@ -4,6 +4,8 @@
 #include "utils.h"
 #include "pico/stdlib.h"
 #include "cic_corrections.h"
+#include "transmit/cw_decoder.h"
+#include "ui.h"
 
 #include <math.h>
 #include <cstdio>
@@ -179,7 +181,22 @@ void inline rx_dsp :: iq_imbalance_correction(int16_t &i, int16_t &q)
       i = ((int32_t)i * c2) >> 15;
     }
 }
+void rx_dsp::add_to_cw_buffer(char new_char) {
+  size_t len = strlen(cw_decoded_message);
 
+  if (len < 63) {
+    // If the buffer is not full, just append the new character
+    cw_decoded_message[len] = new_char;
+    cw_decoded_message[len + 1] = '\0';
+  } else {
+    // If the buffer is full, shift all characters one position to the left
+    // and then add the new character at the end.
+    for (size_t i = 0; i < 63; i++) {
+      cw_decoded_message[i] = cw_decoded_message[i + 1];
+    }
+    cw_decoded_message[62] = new_char;
+  }
+}
 uint16_t __not_in_flash_func(rx_dsp :: process_block)(uint16_t samples[], int16_t audio_samples[], ring_buffer_t *iq_samples)
 {
 
@@ -196,6 +213,9 @@ uint16_t __not_in_flash_func(rx_dsp :: process_block)(uint16_t samples[], int16_
       int16_t i = ((idx&1)^1^swap_iq)*raw_sample;//even samples contain i data
       int16_t q = ((idx&1)^swap_iq)*raw_sample;//odd samples contain q data
 
+      // preamp
+      /* i *= (int16_t)10;
+      q *= (int16_t)10; */
       //reduce sample rate by a factor of 16
       if(decimate(i, q))
       {
@@ -282,7 +302,19 @@ uint16_t __not_in_flash_func(rx_dsp :: process_block)(uint16_t samples[], int16_
 
     //squelch
     audio = squelch(audio, signal_amplitude);
-
+    //printf("%d", enable_cw_decoder);
+    if(enable_cw_decoder) {
+      //printf("DECODER ENABLED");
+      static uint32_t sample_time = 0;
+      cw_decoder_process(audio, sample_time++);    
+      // Check for decoded characters TODO: Display on screen instead of printf
+      char decoded = cw_decoder_get_char();
+      if (decoded) {
+          printf("%c", decoded);
+          add_to_cw_buffer(decoded);
+      }
+    }
+    
     //output raw audio
     audio_samples[idx] = audio;
   }
@@ -598,6 +630,11 @@ rx_dsp :: rx_dsp()
 void rx_dsp :: set_auto_notch(bool enable_auto_notch)
 {
   filter_control.enable_auto_notch = enable_auto_notch;
+}
+
+void rx_dsp :: set_cw_decoder(bool enable_cw_decoder) {
+  printf("DECODER ENABLE");
+  enable_cw_decoder = enable_cw_decoder;
 }
 
 void rx_dsp :: set_spectrum_smoothing(uint8_t spectrum_smoothing)

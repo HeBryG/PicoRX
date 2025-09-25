@@ -42,6 +42,22 @@ void apply_settings_to_rx(rx & receiver, rx_settings & rx_settings, s_settings &
   rx_settings.treble = settings.global.treble;
   rx_settings.bass = settings.global.bass;
   rx_settings.stream_raw_iq = settings.global.usb_stream;
+  rx_settings.rx_isolation = settings.global.rx_isolation;
+
+  // CW as default tx mode
+  rx_settings.tx_modulation = CW;
+  rx_settings.cw_paddle = settings.global.cw_paddle;
+  rx_settings.cw_speed = settings.global.cw_speed;
+  rx_settings.mic_gain = settings.global.mic_gain;
+  rx_settings.pwm_min = settings.global.pwm_min;
+  rx_settings.pwm_max = settings.global.pwm_max;
+  rx_settings.pwm_threshold = settings.global.pwm_threshold;
+  rx_settings.cw_decoder = settings.global.cw_decoder;
+  rx_settings.cw_decoder_m_limit = settings.global.cw_decoder_m_limit * 1000;
+  rx_settings.cw_decoder_m_l_limit = settings.global.cw_decoder_m_l_limit * 1000;
+  rx_settings.cw_decoder_tone_freq = settings.global.cw_decoder_tone_freq * 10;
+  rx_settings.cw_decoder_sampl_freq = settings.global.cw_decoder_sampl_freq * 1000;
+  rx_settings.cw_decoder_nb_ms = settings.global.cw_decoder_nb_ms;
   receiver.release();
 }
 

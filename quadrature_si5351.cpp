@@ -56,6 +56,7 @@ bool quad_si5351 :: initialise(i2c_inst_t *i2c, uint8_t sda_pin, uint8_t scl_pin
     };
     int ret = i2c_write_blocking(m_i2c, m_address, reset_sequence, 9, false);  
     return ret != PICO_ERROR_GENERIC;
+    init_clk2();
 
 }
 
@@ -292,4 +293,62 @@ double quad_si5351 :: set_frequency_hz_low(uint32_t frequency_Hz)
   m_rdiv = rdiv;
 
   return exact_frequency;
+}
+
+// init_clk2
+void quad_si5351::init_clk2()
+{
+    // Configure CLK2 control register
+    write_reg(SI_CLK2_CONTROL, 0x4C | SI_CLK_SRC_PLL_B | m_drive_strength);
+    
+    // Initialize phase offset
+    configure_phase_offset(2, 0);
+    
+    // Start with CLK2 disabled
+    clk2_output_enable(false);
+    m_clk2_enabled = false;
+}
+void quad_si5351::clk2_output_enable(bool enable)
+{
+    if (enable) {
+        // Enable CLK2, keep CLK0/1 enabled
+        write_reg(SI_OUPUT_ENABLE, 0xF8);  // bits 0,1,2 = 0 (enabled)
+        m_clk2_enabled = true;
+      } else {
+        // Disable CLK2, keep CLK0/1 enabled  
+        write_reg(SI_OUPUT_ENABLE, 0xFC);  // bit 2 = 1 (disabled), bits 0,1 = 0
+        m_clk2_enabled = false;
+    }
+}
+
+double quad_si5351::set_clk2_frequency_hz(uint32_t frequency_Hz)
+{
+    // ALWAYS configure when called - no caching/checking
+    
+    // Calculate divider and PLL settings
+    uint32_t divider = 2*((600000000+(2*frequency_Hz))/(2*frequency_Hz));
+    const uint32_t pll_frequency = divider * frequency_Hz;
+    
+    const uint32_t multiplier_integer_part = pll_frequency / m_crystal_frequency_Hz;
+    const uint64_t multiplier_fractional_part = pll_frequency % m_crystal_frequency_Hz;
+    const uint32_t multiplier_denominator = 1048575u;
+    const uint64_t multiplier_numerator = (multiplier_fractional_part * multiplier_denominator) / m_crystal_frequency_Hz;
+    
+    // Configure PLL B
+    configure_pll(SI_SYNTH_PLL_B, multiplier_integer_part, multiplier_numerator, multiplier_denominator);
+    
+    // Configure multisynth 2
+    configure_multisynth(SI_SYNTH_MS_2, divider, SI_R_DIV_1);
+    
+    // Reset PLL B - CRITICAL: Add delay after reset
+    write_reg(SI_PLL_RESET, 0x80);
+    sleep_ms(10);  // Give PLL time to lock
+    
+    // Update control register  
+    write_reg(SI_CLK2_CONTROL, 0x4C | SI_CLK_SRC_PLL_B | m_drive_strength);
+    
+    const double exact_frequency = m_crystal_frequency_Hz * 
+        (multiplier_integer_part + ((double)multiplier_numerator/multiplier_denominator)) / divider;
+    
+    return exact_frequency;
 }
