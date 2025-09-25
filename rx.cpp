@@ -310,6 +310,17 @@ void rx::apply_settings()
       tx_pwm_max = settings_to_apply.pwm_max;
       tx_pwm_threshold = settings_to_apply.pwm_threshold;
 
+      // Update decoder settings
+      rx_dsp_inst.set_cw_decoder(settings_to_apply.cw_decoder);
+
+      cw_decoder_update_settings(settings_to_apply.cw_decoder_wpm,
+              settings_to_apply.cw_decoder_m_limit, 
+              settings_to_apply.cw_decoder_m_l_limit,
+              settings_to_apply.cw_decoder_tone_freq,
+              settings_to_apply.cw_decoder_sampl_freq,
+              settings_to_apply.cw_decoder_nb_ms
+            );
+
       settings_changed = false;
       sem_release(&settings_semaphore);
    }
@@ -577,66 +588,147 @@ void __not_in_flash_func(rx::process_block)(uint16_t adc_samples[], int16_t audi
                          sizeof(int16_t) * 2 * num_samples);
   }
 }
+
 void __not_in_flash_func(rx::transmit_cw)()
 {
-    printf("CW Transmit Function Called\n");
+    //printf("CW Transmit Function Called\n");
     
     // Configure PWM pin for magnitude control (PA envelope)
     gpio_set_function(PIN_MAGNITUDE, GPIO_FUNC_PWM);
-    
+
     // Initialize PWM for envelope control
     pwm magnitude_pwm(PIN_MAGNITUDE);
-    
-    // Get transmit parameters from settings
-    const uint8_t pwm_min = 30;
-    const uint8_t pwm_max = 160; 
-    const uint8_t pwm_threshold = 1;
-    
-    // Enable external oscillator/PLL for RF carrier
-    gpio_put(LED, 1);
-    gpio_put(PIN_PTT, 0);
-    external_nco.clk2_output_enable(true);
-    // CW transmission loop
-    while (ptt()) {
-        // Handle keyer monitor/sidetone generation
-        keyer.handle_keyer_monitor();
 
-        // Get envelope from CW keyer (0-32767)
-        int32_t keyer_envelope = keyer.get_sample();
+    const int keyer_sample_rate = 15000;
+    
+    // CRITICAL: Initialize keyer properly
+    keyer.reset_sample_counter();
+    keyer.set_sample_rate(keyer_sample_rate, tx_cw_speed); // Use actual TX CW speed
+    keyer.phase = 0.0f; // Reset phase
+    
+    // Enable transmit
+    gpio_put(LED, 1);
+
+    gpio_put(PIN_PTT, 0);
+    if(external_nco_good && external_nco_initialised) {
+      // Set CLK2 frequency first
+      //external_nco.set_clk2_frequency_hz(tuned_frequency_Hz);
+      
+      // Then enable output
+      external_nco.clk2_output_enable(true);
+      sleep_ms(5);
+      
+      //printf("CLK2 configured for %f Hz\n", tuned_frequency_Hz);
+    }
+    // For iambic mode, we need to handle audio differently
+    // The PWM audio sink expects sample blocks at regular intervals
+    const int SAMPLES_PER_BLOCK = PWM_AUDIO_NUM_SAMPLES;
+    int16_t audio_buffer[SAMPLES_PER_BLOCK];
+    
+    // Timing control - we need to maintain ~15kHz effective sample rate
+    // But push audio blocks at the right rate for the PWM sink
+    const uint32_t BLOCK_PERIOD_US = (SAMPLES_PER_BLOCK * 1000000) / keyer_sample_rate; // microseconds per block
+    uint32_t last_block_time = time_us_32();
+    
+    // Initialize buffer
+    /*     for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
+        audio_buffer[i] = 0;
+    } */
+    
+    printf("Keyer mode: %s\n", keyer.m_paddle_type == STRAIGHT ? "STRAIGHT" : "IAMBIC");
+    
+    // Main transmission loop
+    while (ptt()) {
+        if (keyer.m_paddle_type == STRAIGHT) {
+            // ================================================================
+            // STRAIGHT KEY MODE
+            // ================================================================
+            keyer.generate_tone_block(); // This handles everything internally
+            
+            // Get envelope for PA control
+            int32_t keyer_envelope = keyer.get_sample();
+            uint16_t magnitude = (uint16_t)(keyer_envelope << 1);
+            magnitude_pwm.output_sample(magnitude, tx_pwm_min, tx_pwm_max, tx_pwm_threshold);
+            
+        } else {
+            // ================================================================
+            // IAMBIC MODE - Generate full blocks at proper timing
+            // ================================================================
+            bool is_keyed = keyer.update_keyer_state();
         
-        
+            // Generate a full block of samples
+            for (int i = 0; i < SAMPLES_PER_BLOCK; i++) {
+                
+                // Generate sine wave sample
+                int idx = ((int)keyer.phase) & (SINE_TABLE_SIZE - 1);
+                audio_buffer[i] = is_keyed ? keyer.sine_table[idx] : 0;
+                
+                // Update phase
+                keyer.phase += keyer.phase_inc;
+                if (keyer.phase >= (float)SINE_TABLE_SIZE) 
+                    keyer.phase -= (float)SINE_TABLE_SIZE;
+                
+                // CRITICAL: Increment sample counter for timing!
+                keyer.sample_counter++;
+            }
+            
+            // Push the complete audio block
+            pwm_audio_sink_push(audio_buffer, gain_numerator);
+
+            // Double check just in case
+            if(!external_nco.m_clk2_enabled) external_nco.clk2_output_enable(true);
+            // Get current envelope for PA control (use last state)
+            int32_t keyer_envelope = keyer.key_shape(keyer.tone_active);
+            uint16_t magnitude = (uint16_t)(keyer_envelope << 1);
+            magnitude_pwm.output_sample(magnitude, tx_pwm_min, tx_pwm_max, tx_pwm_threshold);
+            
+            // Wait for proper block timing
+            uint32_t current_time = time_us_32();
+            uint32_t elapsed = current_time - last_block_time;
+            if (elapsed < BLOCK_PERIOD_US) {
+                sleep_us(BLOCK_PERIOD_US - elapsed);
+            }
+            last_block_time = time_us_32();
+        }
         
         // Update audio level indicator
-        tx_audio_level = tx_audio_level - (tx_audio_level >> 5) + (abs(keyer_envelope) >> 5);
+        tx_audio_level = tx_audio_level - (tx_audio_level >> 5) + (abs(audio_buffer[0]) >> 5);
         
-        // Convert keyer envelope to 16-bit magnitude for PWM
-        // Scale from keyer range (0-32767) to full 16-bit (0-65535)
-        uint16_t magnitude = (uint16_t)(keyer_envelope << 1);
-        
-        // Output PWM-controlled envelope to PA
-        magnitude_pwm.output_sample(magnitude, pwm_min, pwm_max, pwm_threshold);
-        // Immediate clk disable, experimental
-        
-    
         // Update status for UI
         update_status();
-        
-        // Small delay to maintain proper timing
-        // This should match keyer sample rate
-        sleep_us(67); // ~15kHz sample rate (1/15000 ≈ 67µs)
     }
     
-    // Turn off transmit
-    gpio_put(LED, 0);
+    // ================================================================
+    // CLEANUP - Ensure proper shutdown
+    // ================================================================
+    // printf("Stopping transmission...\n");
     
-    // Ensure PWM is off
-    magnitude_pwm.output_sample(0, pwm_min, pwm_max, pwm_threshold);
-    external_nco.clk2_output_enable(false);
+    // Turn off LED
+    gpio_put(LED, 0);
+    // Ramp down PA smoothly
+    for (int i = tx_pwm_max; i >= 0; i -= 5) {
+        magnitude_pwm.output_sample(i, tx_pwm_min, tx_pwm_max, tx_pwm_threshold);
+        sleep_us(100);
+    }
+    magnitude_pwm.output_sample(0, tx_pwm_min, tx_pwm_max, tx_pwm_threshold);
+        
+    
+    
+    // Send final silence block to clear audio pipeline
+    int16_t silence[PWM_AUDIO_NUM_SAMPLES] = {0};
+    pwm_audio_sink_push(silence, gain_numerator);
+    if(external_nco_good && external_nco_initialised) {
+      // Just disable output
+      external_nco.clk2_output_enable(false);
+      //printf("CLK2 disabled\n");
+    }
+    // Final delay to ensure all hardware has settled
+    sleep_ms(10);
     gpio_put(PIN_PTT, 1);
-    printf("CW Transmit Complete\n");
+    
+    // printf("CW Transmit Complete\n");
 }
-
-void __not_in_flash_func(rx::transmit)()
+/* void __not_in_flash_func(rx::transmit)()
 {
     printf("Transmit Function Called\n");
     gpio_set_function(PIN_MAGNITUDE, GPIO_FUNC_PWM);
@@ -713,8 +805,7 @@ void __not_in_flash_func(rx::transmit)()
     si5351_output_enable(SI5351_CLK2, 0);
     //gpio_set_function(MAGNITUDE_PIN, GPIO_FUNC_SIO);
 }
-
-
+ */
 void rx::run()
 {
     usb_audio_device_init();
@@ -768,6 +859,7 @@ void rx::run()
             dma_channel_cleanup(adc_dma_ping);
             dma_channel_cleanup(adc_dma_pong);
             //pwm_audio_sink_stop();
+            
 
             adc_run(false);
             adc_fifo_drain();
@@ -805,8 +897,17 @@ void rx::run()
 
       if(ptt())
       {
+
+        // For now, since GorriatoQRP hardware only allows CW TX
+        // We are going to use transmit_cw() instead of transmit()
+        // Which is capable of also doing SSB
+        // 
         transmit_cw();
-        //pio_sm_set_enabled(pio, sm, true);
+
+        
+        // Another approach to sidetone could be stopping the pwm sink
+        // and doing direct tone generation and push to the pwm pin
+        // But thats blocking, and if we already have the sink... why not use it?
       }
 
 

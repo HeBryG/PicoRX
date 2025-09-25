@@ -90,6 +90,13 @@ struct s_global_settings
   bool    tx_modulation;
   bool    enable_external_nco;
   bool    rx_isolation;
+  bool    cw_decoder;
+  uint8_t cw_decoder_tone_freq;
+  uint8_t cw_decoder_wpm;
+  uint8_t cw_decoder_m_limit;
+  uint8_t cw_decoder_m_l_limit;
+  uint8_t cw_decoder_sampl_freq;
+  uint8_t cw_decoder_nb_ms;
 };
 
 struct s_settings
@@ -110,7 +117,7 @@ const s_settings default_settings = {
   2,        //bandwidth = normal
 }, {
   5,  //volume
-  7, //cw_sidetone = 1000Hz
+  7, //cw_sidetone = 700Hz
   0,  //squelch_threshold
   0,  //squelch_timeout = never
   2,  //spectrum_zoom
@@ -132,13 +139,13 @@ const s_settings default_settings = {
   0x40, //band6
   0x80, //band7
   0x00, //pwm_min
-  0x55, //pwm_max
+  0xFF, //pwm_max 255 in decimal
   10,   //test_tone_frequency
   1,    //cw_paddle;
-  10,    //cw_speed;
+  15,    //cw_speed;
   0,    //mic_gain;
   1,    //pwm_threshold;
-  45, //if_frequency_hz_over_100 = 4500Hz
+  90, //if_frequency_hz_over_100 = 4500Hz
   2,  //if_mode = nearest
   2,  //noise_estimation very_fast, fast, normal, slow, very_slow
   0,  //noise_threshold normal, high, very_high
@@ -160,6 +167,13 @@ const s_settings default_settings = {
   0,  //tx_modulation
   1,  //enable_external_nco
   1,  // RX isolation, 2N7002 rx switch, for rx should be active. When TXing disable it(Currently is PIN_PTT but should be changed name for more clarity)
+  0,  // CW decoder
+  70, // CW_decoder_tone_hz_over_10 = 700Hz
+  20, // CW_DECODER WPM
+  50, // CW_DECODER magnitude limit over 1000
+  30, // CW_DECODER magnitude low limit over 1000
+  15, // CW_DECODER sampling freq over 1000
+  12, // CW_DECODER noise blanker ms
 }};
 
 

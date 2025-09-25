@@ -370,6 +370,14 @@ void ui::renderpage_original(rx_status & status, rx & receiver)
   display_show();
 }
 
+void ui::display_decoded_cw() {
+  ssd1306_fill_rectangle(&disp, 0, 55, 128, 9, 0); // Clear only the CW area
+  u8g2_SetFont(&u8g2, u8g2_font_6x10_tf);
+  uint16_t x_pos = (128 - u8g2_GetStrWidth(&u8g2, receiver.rx_dsp_inst.cw_decoded_message)) / 2;
+  u8g2_DrawStr(&u8g2, x_pos, 60, receiver.rx_dsp_inst.cw_decoded_message);
+  u8g2_SendBuffer(&u8g2);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Home page status display with bigger spectrum view
 ////////////////////////////////////////////////////////////////////////////////
@@ -378,7 +386,15 @@ void ui::renderpage_bigspectrum(rx_status & status, rx & receiver)
   display_clear();
   draw_slim_status(0, status, receiver);
   draw_h_tick_marks(8);
-  draw_spectrum(13, 63);
+
+  // Draw CW decoded message at the bottom
+  if (settings_to_apply.cw_decoder) {
+    draw_spectrum(13, 55); // Changed endY to 55 to make room for text
+    display_decoded_cw();
+  } else {
+    draw_spectrum(13, 47);
+  }
+  
   display_show();
 }
 
@@ -392,7 +408,12 @@ void ui::renderpage_combinedspectrum(bool view_changed, rx_status & status, rx &
   draw_waterfall(48);
   draw_slim_status(0, status, receiver);
   draw_h_tick_marks(8);
-  draw_spectrum(13, 47);
+  if (settings_to_apply.cw_decoder) {
+    draw_spectrum(13, 55); // Changed endY to 55 to make room for text
+    display_decoded_cw();
+  } else {
+    draw_spectrum(13, 47);
+  }
   display_show();
 }
 
@@ -2100,6 +2121,79 @@ bool ui::noise_menu(bool & ok)
     return false;
 }
 
+
+bool ui::cw_decoder_menu(bool &ok)
+{
+    enum e_ui_state{select_menu_item, menu_item_active};
+    static e_ui_state ui_state = select_menu_item;
+    
+    static uint32_t menu_selection = 0;
+
+    //chose menu item
+    if(ui_state == select_menu_item)
+    {
+      if(menu_entry("CW decoder", "Enable#Target \nFreq#WPM#Mag \nLimit#Mag Low#Samp. \nFreq#Noise B.", &menu_selection, ok))
+      {
+        if(ok) 
+        {
+          //OK button pressed, more work to do
+          ui_state = menu_item_active;
+          return false;
+        }
+        else
+        {
+          //cancel button pressed, done with menu
+          menu_selection = 0;
+          ui_state = select_menu_item;
+          return true;
+        }
+      }
+    }
+
+    //menu item active
+    else if(ui_state == menu_item_active)
+    {
+      bool done = false;
+      bool changed = false;
+      switch(menu_selection)
+      {
+
+        case 0 : 
+          done = bit_entry("Enable", "Off#On#", settings.global.cw_decoder, ok);
+          break;
+        case 1 : 
+          done = number_entry("Target \nFreq", "%iHz", 0, 100, 10, settings.global.cw_decoder_tone_freq, ok, changed);
+          break;
+        case 2 : 
+          done = number_entry("WPM", "%i", 1, 50, 1, settings.global.cw_decoder_wpm, ok, changed);
+          break;
+        case 3 : 
+          done = number_entry("Mag \nLimit", "%i", 1, 100, 1000, settings.global.cw_decoder_wpm, ok, changed);
+          break;
+        case 4 : 
+          done = number_entry("Mag Low", "%i", 1, 100, 1000, settings.global.cw_decoder_wpm, ok, changed);
+          break;
+        case 5 : 
+          done = number_entry("Samp. \nFreq", "%iHz", 1, 30, 1000, settings.global.cw_decoder_sampl_freq, ok, changed);
+          break;
+        case 6 : 
+          done = number_entry("Noise B.", "%i", 1, 100, 1, settings.global.cw_decoder_nb_ms, ok, changed);
+          break;
+      }
+
+      if(changed) apply_settings(false);
+      if(done)
+      {
+        menu_selection = 0;
+        ui_state = select_menu_item;
+        return true;
+      }
+    }
+    return false;
+
+}
+
+
 bool ui::transmit_menu(bool &ok)
 {
     enum e_ui_state{select_menu_item, menu_item_active};
@@ -2190,7 +2284,7 @@ bool ui::main_menu(bool & ok)
     //chose menu item
     if(ui_state == select_menu_item)
     {
-      if(menu_entry("Menu", "Frequency#Recall#Store#Volume#Mode#AGC#AGC Gain#Bandwidth#Squelch#Squelch\nTimeout#Noise\nReduction#Auto Notch#De-\nEmphasis#Bass#Treble#IQ\nCorrection#Spectrum#Aux\nDisplay#Band Start#Band Stop#Frequency\nStep#CW Tone\nFrequency#USB Stream#HW Config#Transmit#", &menu_selection, ok))
+      if(menu_entry("Menu", "Frequency#Recall#Store#Volume#Mode#AGC#AGC Gain#Bandwidth#Squelch#Squelch\nTimeout#Noise\nReduction#Auto Notch#De-\nEmphasis#Bass#Treble#IQ\nCorrection#Spectrum#Aux\nDisplay#Band Start#Band Stop#Frequency\nStep#CW Tone\nFrequency#USB Stream#HW Config#Transmit#CW decoder#", &menu_selection, ok))
       {
         if(ok) 
         {
@@ -2301,6 +2395,9 @@ bool ui::main_menu(bool & ok)
             break;
           case 24 : 
             done = transmit_menu(ok);
+            break;
+          case 25 :
+            done = cw_decoder_menu(ok);
             break;
         }
         if(done)

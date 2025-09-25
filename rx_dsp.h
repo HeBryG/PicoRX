@@ -35,9 +35,10 @@ class rx_dsp
   bool get_raw_data(int16_t &i, int16_t &q);
   uint32_t get_iq_buffer_level();
   float get_tuning_offset_Hz();
-
+  char cw_decoded_message[64] = "";
+  void set_cw_decoder(bool enable_cw_decoder);
   private:
-  
+  void add_to_cw_buffer(char new_char);
   void frequency_shift(int16_t &i, int16_t &q);
   bool decimate(int16_t &i, int16_t &q);
   int16_t demodulate(int16_t i, int16_t q, uint16_t mag, int16_t phi);
@@ -72,6 +73,7 @@ class rx_dsp
   s_filter_control filter_control;
   s_filter_control capture_filter_control;
 
+  bool enable_cw_decoder;
   //used in frequency shifter
   uint8_t swap_iq;
   uint8_t iq_correction;

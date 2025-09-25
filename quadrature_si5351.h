@@ -1,6 +1,7 @@
 
 #include <cstdint>
 #include "hardware/i2c.h"
+#include "pico/stdlib.h"
 
 #define SI_OUPUT_ENABLE 3
 #define SI_CLK0_CONTROL	16			// Register definitions
@@ -28,7 +29,10 @@ const bool high_mode = true;
 
 class quad_si5351
 {
-
+  static constexpr uint8_t TX1RX0 = 0b11111011;  // CLK0/1 enabled, CLK2 disabled
+  static constexpr uint8_t TX0RX1 = 0b11111100;  // CLK0/1 enabled, CLK2 disabled  
+  static constexpr uint8_t TX0RX0 = 0b11111111;  // All disabled
+  
   void configure_pll(uint8_t pll, uint8_t mult, uint32_t num, uint32_t denom);
   void configure_multisynth(uint8_t synth, uint32_t divider, uint8_t rDiv);
   void configure_phase_offset(uint8_t clk, uint8_t phase_ofset);
@@ -61,5 +65,6 @@ class quad_si5351
   void clk2_output_enable(bool enable);
   void set_clk2_phase(uint8_t phase_offset);
   void crystal_load(uint8_t load);
+  void force_clk2_off();
   void write_reg_safe(uint8_t address, uint8_t data);  // Optional enhanced version
 };

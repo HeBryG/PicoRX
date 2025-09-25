@@ -1,26 +1,33 @@
+// CW KEYER BASED ON dawsonjon W9RAN branch WORK
+// INTEGRATION + MODIFICATIONS BY EA4IIF
 #include "cw_keyer.h"
 #include "pico/stdlib.h"
 #include "pwm_audio_sink.h"
+#include "hardware/pwm.h"
+#include "pins.h"
 #include <cmath>
 #include <string.h>
 #include <cstdio>
 
-#define SINE_TABLE_SIZE 256
 #define TONE_FREQ 700          // Hz CW tone
-#define AUDIO_SAMPLE_RATE 15000
+#define AUDIO_SAMPLE_RATE 15000    // From audio_sample_rate
+
 uint16_t ramp_length_samples;
-static int16_t sine_table[SINE_TABLE_SIZE];
-static float phase = 0.0f;
-static float phase_inc;
 int16_t audio_samples[PWM_AUDIO_NUM_SAMPLES];
 int audio_samples_fill = 0;
+
+
 cw_keyer::cw_keyer(uint8_t paddle_type, uint8_t paris_wpm, button &dit, button &dah)
     : dit(dit), dah(dah)
 {
     timer = 0;
-
     m_paddle_type = paddle_type;
+    set_sample_rate(15000, paris_wpm);
     init_sine_table();
+}
+
+void cw_keyer::change_paddle_type(uint8_t paddle_type) {
+    m_paddle_type = paddle_type;
 }
 
 void __not_in_flash_func(cw_keyer::init_sine_table)(void) {
@@ -32,14 +39,28 @@ void __not_in_flash_func(cw_keyer::init_sine_table)(void) {
 }
 
 void __not_in_flash_func(cw_keyer::set_sample_rate)(uint32_t sample_rate_Hz, uint8_t paris_wpm) {
-  dit_length_samples = (sample_rate_Hz * 60) / (50 * paris_wpm);
-  // Set a fixed, fast ramp time (e.g., 5ms) for crisp on/off keying and to avoid attenuation on short dits.
-  // This value should be used for PA key shaping, not the sidetone.
-  ramp_length_samples = (sample_rate_Hz / 1000) * 5; // 5ms ramp
-  // Add a minimum ramp time to avoid a harsh tone for extremely fast speeds
-  if (ramp_length_samples < 5) {
-      ramp_length_samples = 5;
-  }
+    // PARIS = 50 dot units (dits + spaces)
+    // WPM = words per minute
+    // Dit time in milliseconds = 1200 / WPM
+    // Dit time in samples = (sample_rate * 1200) / (WPM * 1000)
+    
+    dit_length_samples = (sample_rate_Hz * 60) / (50 * paris_wpm);
+    dah_length_samples = dit_length_samples * 3;
+    element_space_samples = dit_length_samples;
+    
+    // Ramp should be short relative to dit length (max 10% of dit)
+    ramp_length_samples = dit_length_samples / 10;
+    if (ramp_length_samples < 5) {
+        ramp_length_samples = 5; // Minimum 5 samples for smooth ramp
+    }
+    if (ramp_length_samples > 20) {
+        ramp_length_samples = 20; // Maximum 20 samples to keep crisp
+    }
+    
+    /* printf("CW Timing: %d WPM, Dit=%lu samples (%.1fms), Ramp=%d samples\n", 
+           paris_wpm, dit_length_samples, 
+           (float)dit_length_samples * 1000.0f / sample_rate_Hz,
+           ramp_length_samples); */
 }
 
 bool __not_in_flash_func(cw_keyer::get_straight)()
@@ -106,135 +127,158 @@ int16_t __not_in_flash_func(cw_keyer::key_shape)(bool pressed)
 
 int16_t __not_in_flash_func(cw_keyer::get_sample)()
 {
-    bool keyed = get_iambic() || get_straight();
-    return key_shape(keyed);
+    int16_t shape = key_shape(get_straight());
+    return shape;
 }
 
+void cw_keyer::reset_sample_counter() {
+    sample_counter = 0;
+    element_start_sample = 0;
+    element_end_sample = 0;
+    tone_active = false;
+    keyer_state = IDLE;
+    phase = 0.0f;
+}
 
-bool __not_in_flash_func(cw_keyer::get_iambic)() {
-    bool is_keyed = false;
-
+bool __not_in_flash_func(cw_keyer::update_keyer_state)() {
+    is_keyed = false;
+    
+    // Handle straight key mode
+    if (m_paddle_type == STRAIGHT) {
+        bool key_pressed = dit.is_keyed() || dah.is_keyed();
+        if (key_pressed) {
+            keyer_state = DIT; // Use DIT state for straight key
+            tone_active = true;
+            return true;
+        } else {
+            tone_active = false;
+            keyer_state = IDLE;
+            return false;
+        }
+    }
+    
+    // IAMBIC MODE state machine
     switch (keyer_state) {
         case IDLE:
-            // Wait for a paddle press
             if (dit.is_keyed()) {
                 keyer_state = DIT;
-                counter = dit_length_samples;
+                element_start_sample = sample_counter;
+                element_end_sample = sample_counter + dit_length_samples;
+                tone_active = true;
             } else if (dah.is_keyed()) {
                 keyer_state = DAH;
-                counter = dit_length_samples * 3;
+                element_start_sample = sample_counter;
+                element_end_sample = sample_counter + dah_length_samples;
+                tone_active = true;
             }
             break;
-
+            
         case DIT:
-            is_keyed = true;
-            // If the dit paddle is released, transition to the next state
-            if (!dit.is_keyed()) {
-                // Check for a memory of a pending dah or if both paddles are released
+            if (sample_counter >= element_end_sample) {
+                // Dit finished, start inter-element space
+                keyer_state = SPACE;
+                element_start_sample = sample_counter;
+                element_end_sample = sample_counter + element_space_samples;
+                tone_active = false;
+                
+                // Iambic memory: if dah is pressed during dit, queue it
                 if (dah.is_keyed()) {
                     keyer_state = DAH_SPACE;
-                    counter = dit_length_samples;
-                } else {
-                    keyer_state = SPACE;
-                    counter = dit_length_samples;
                 }
-            } else if (m_paddle_type == IAMBIC_B && dit.is_keyed() && dah.is_keyed()) {
-                // For IAMBIC_B, pressing the other paddle during an element
-                // signals the next element.
-                keyer_state = DAH_SPACE;
-                counter = dit_length_samples;
-            } else if (!counter--) {
-                // If the element's duration is complete, transition to space.
-                keyer_state = SPACE;
-                counter = dit_length_samples;
+            } else {
+                is_keyed = true; // Keep tone on during dit
+                
+                // Iambic B: both paddles pressed during element
+                if (m_paddle_type == IAMBIC_B && dah.is_keyed()) {
+                    // Remember to play dah after space
+                    // Don't interrupt current dit
+                }
             }
             break;
-
+            
         case DAH:
-            is_keyed = true;
-            // If the dah paddle is released, transition to the next state
-            if (!dah.is_keyed()) {
+            if (sample_counter >= element_end_sample) {
+                // Dah finished, start inter-element space
+                keyer_state = SPACE;
+                element_start_sample = sample_counter;
+                element_end_sample = sample_counter + element_space_samples;
+                tone_active = false;
+                
+                // Iambic memory: if dit is pressed during dah, queue it
                 if (dit.is_keyed()) {
                     keyer_state = DIT_SPACE;
-                    counter = dit_length_samples;
-                } else {
-                    keyer_state = SPACE;
-                    counter = dit_length_samples;
                 }
-            } else if (m_paddle_type == IAMBIC_B && dit.is_keyed() && dah.is_keyed()) {
-                keyer_state = DIT_SPACE;
-                counter = dit_length_samples;
-            } else if (!counter--) {
-                keyer_state = SPACE;
-                counter = dit_length_samples;
+            } else {
+                is_keyed = true; // Keep tone on during dah
+                
+                // Iambic B: both paddles pressed during element
+                if (m_paddle_type == IAMBIC_B && dit.is_keyed()) {
+                    // Remember to play dit after space
+                    // Don't interrupt current dah
+                }
             }
             break;
-
+            
         case SPACE:
-            // This state handles the inter-element space and the memory function.
-            if (dit.is_keyed()) {
-                keyer_state = DIT;
-                counter = dit_length_samples;
-            } else if (dah.is_keyed()) {
-                keyer_state = DAH;
-                counter = dit_length_samples * 3;
-            } else if (!counter--) {
-                // If no paddle is pressed and the space timeout is over, go back to IDLE
-                keyer_state = IDLE;
+            if (sample_counter >= element_end_sample) {
+                // Space finished, check for next element
+                if (dit.is_keyed()) {
+                    keyer_state = DIT;
+                    element_start_sample = sample_counter;
+                    element_end_sample = sample_counter + dit_length_samples;
+                    tone_active = true;
+                } else if (dah.is_keyed()) {
+                    keyer_state = DAH;
+                    element_start_sample = sample_counter;
+                    element_end_sample = sample_counter + dah_length_samples;
+                    tone_active = true;
+                } else {
+                    keyer_state = IDLE;
+                }
             }
             break;
-
+            
         case DAH_SPACE:
-            // This state is the transition space before a forced DAH
-            if (!counter--) {
+            // Waiting in space to play queued dah
+            if (sample_counter >= element_end_sample) {
                 keyer_state = DAH;
-                counter = dit_length_samples * 3;
+                element_start_sample = sample_counter;
+                element_end_sample = sample_counter + dah_length_samples;
+                tone_active = true;
             }
             break;
-        
+            
         case DIT_SPACE:
-            // This state is the transition space before a forced DIT
-            if (!counter--) {
+            // Waiting in space to play queued dit
+            if (sample_counter >= element_end_sample) {
                 keyer_state = DIT;
-                counter = dit_length_samples;
+                element_start_sample = sample_counter;
+                element_end_sample = sample_counter + dit_length_samples;
+                tone_active = true;
             }
             break;
     }
-
-    return is_keyed;
+    
+    return tone_active;
 }
 
 void __not_in_flash_func(cw_keyer::generate_tone_block)() {
-    // Get the current keyed state (true if either key is pressed).
-    bool keyed = get_iambic() || get_straight();
-    
-    // Fill the audio buffer with samples.
     for (int i = 0; i < PWM_AUDIO_NUM_SAMPLES; i++) {
-        // Generate a raw sine wave sample.
-        int16_t raw_sine_sample = sine_table[(int)phase];
-        
-        // Sidetone is now a simple on/off, not shaped.
-        if (keyed) {
-            audio_samples[i] = raw_sine_sample;
-        } else {
-            audio_samples[i] = 0;
-        }
-        
-        // Increment phase for the next sample.
+        bool keyed = update_keyer_state();
+        int idx = ((int)phase) & (SINE_TABLE_SIZE - 1);
+        int16_t raw_sine_sample = sine_table[idx];
+
+        // AUDIO: no shaping here, just gate with tone_active
+        audio_samples[i] = keyed ? raw_sine_sample : 0;
+
+        // advance phase
         phase += phase_inc;
-        if (phase >= SINE_TABLE_SIZE) {
-            phase -= SINE_TABLE_SIZE;
-        }
+        if (phase >= (float)SINE_TABLE_SIZE) phase -= (float)SINE_TABLE_SIZE;
     }
-    
-    // Push the filled buffer to the audio sink.
-    // The '20' parameter seems to be a hardcoded gain, but it's
-    // already in your code, so we'll keep it for now.
-    pwm_audio_sink_push(audio_samples, 20);
-}
 
+    // debug first sample of the block:
+    // printf("audio_samples[0]=%d phase_inc=%f tone=%d shape=%d\n", audio_samples[0], phase_inc, tone_active, key_shape(tone_active));
 
-
-void __not_in_flash_func(cw_keyer::handle_keyer_monitor)() {
-    generate_tone_block();
+    // Push to audio sink
+    pwm_audio_sink_push(audio_samples, 25);
 }

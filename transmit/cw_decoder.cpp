@@ -10,10 +10,24 @@
 
 goertzel_cw_decoder_t decoder = {0};
 
+void cw_decoder_update_settings(uint16_t wpm, uint8_t m_limit, uint8_t m_limit_low, uint8_t t_freq, uint8_t s_freq, int nb_ms) {
+    int k = (int)(0.5f + ((GOERTZEL_N * t_freq) / s_freq));
+    float omega = (2.0f * M_PI * k) / GOERTZEL_N;
+    decoder.coeff = 2.0f * cosf(omega);
+
+    decoder.magnitude_limit = m_limit;        // Adjust for signal levels
+    decoder.magnitude_limit_low = m_limit_low;    // Noise floor threshold
+
+    // Initialize timing - more conservative noise blanker
+    decoder.nb_time = (s_freq / 1000) * nb_ms; // Increase noise blanker
+    decoder.high_time_avg = (s_freq * 60) / (50 * wpm); // Initialize with expected dit time
+    decoder.wpm = wpm;
+}
+
 // Initialize the Goertzel-based CW decoder
 void cw_decoder_init(uint16_t wpm) {
     // Initialize Goertzel coefficients
-    int k = (int)(0.5f + ((GOERTZEL_N * TARGET_FREQ) / SAMPLING_FREQ));
+    int k = (int)(0.5f + ((GOERTZEL_N * CW_DECODER_TARGET_FREQ) / CW_DECODER_SAMPLING_FREQ));
     float omega = (2.0f * M_PI * k) / GOERTZEL_N;
     decoder.coeff = 2.0f * cosf(omega);
     
@@ -21,12 +35,12 @@ void cw_decoder_init(uint16_t wpm) {
     decoder.Q1 = 0.0f;
     decoder.Q2 = 0.0f;
     decoder.sample_index = 0;
-    decoder.magnitude_limit = 50000.0f;        // Adjust for your signal levels
+    decoder.magnitude_limit = 50000.0f;        // Adjust for signal levels
     decoder.magnitude_limit_low = 30000.0f;    // Noise floor threshold
     
     // Initialize timing - more conservative noise blanker
-    decoder.nb_time = (SAMPLING_FREQ / 1000) * 12; // Increase to 12ms noise blanker
-    decoder.high_time_avg = (SAMPLING_FREQ * 60) / (50 * wpm); // Initialize with expected dit time
+    decoder.nb_time = (CW_DECODER_SAMPLING_FREQ / 1000) * 12; // Increase to 12ms noise blanker
+    decoder.high_time_avg = (CW_DECODER_SAMPLING_FREQ * 60) / (50 * wpm); // Initialize with expected dit time
     decoder.wpm = wpm;
     
     // Initialize character decoding
@@ -39,7 +53,7 @@ void cw_decoder_init(uint16_t wpm) {
     decoder.char_read_index = 0;
     
     printf("CW Decoder initialized: target=%dHz, samples=%d, coeff=%f\n", 
-           (int)TARGET_FREQ, GOERTZEL_N, decoder.coeff);
+           (int)CW_DECODER_TARGET_FREQ, GOERTZEL_N, decoder.coeff);
 }
 
 // Add a character to the output buffer
@@ -119,7 +133,7 @@ void cw_decoder_process(int32_t audio_sample, uint32_t sample_counter) {
     // Collect samples for Goertzel algorithm
     decoder.test_data[decoder.sample_index] = (int16_t)audio_sample;
     decoder.sample_index++;
-    
+
     // When we have enough samples, run Goertzel
     if (decoder.sample_index >= GOERTZEL_N) {
         decoder.sample_index = 0;
@@ -247,12 +261,12 @@ void cw_decoder_process(int32_t audio_sample, uint32_t sample_counter) {
                     decoder.low_duration < (decoder.high_time_avg * (5 * lack_time))) {
                     // Character space
                     decode_morse_code();
-                    // printf("/");
+                    //printf("/");
                 } else if (decoder.low_duration >= (decoder.high_time_avg * (5 * lack_time))) {
                     // Word space
                     decode_morse_code();
                     add_decoded_char(' ');
-                    // printf(" ");
+                    printf(" ");
                 }
                 
             } else {
@@ -278,16 +292,15 @@ void cw_decoder_process(int32_t audio_sample, uint32_t sample_counter) {
                         decoder.code[decoder.code_index++] = '.';
                         decoder.code[decoder.code_index] = '\0';
                     }
-                    // printf(".");
+                    //printf(".");
                     
                 } else if (decoder.high_duration > (decoder.high_time_avg * 2) && 
                           decoder.high_duration < (decoder.high_time_avg * 6)) {
-                    // Dah
                     if (decoder.code_index < 19) {
                         decoder.code[decoder.code_index++] = '-';
                         decoder.code[decoder.code_index] = '\0';
                     }
-                    // printf("-");
+                    //printf("-");
                     
                     // Update WPM calculation
                     uint16_t calculated_wpm = 1200 / (decoder.high_duration / 3);

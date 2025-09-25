@@ -1,13 +1,13 @@
 // CW Decoder for RP2350
-
+#ifndef CW_DECOD_H
+#define CW_DECOD_H
 #include <math.h>
 #include <stdbool.h>
 #include "pico/stdlib.h"
-
 // Goertzel algorithm parameters
-#define GOERTZEL_N 48              // Number of samples for Goertzel
-#define TARGET_FREQ 558.0f         // CW tone frequency to detect
-#define SAMPLING_FREQ 15000.0f      // sample rate
+const int GOERTZEL_N = 48;             // Number of samples for Goertzel
+const int CW_DECODER_TARGET_FREQ = 700;       // CW tone frequency to detect
+const int CW_DECODER_SAMPLING_FREQ = 15000;     // sample rate
 // Timing and state variables
 typedef struct {
     // Goertzel algorithm state
@@ -53,8 +53,9 @@ void cw_decoder_init(uint16_t wpm);
 void add_decoded_char(char c);
 
 void decode_morse_code();
-
+void cw_decoder_update_settings(uint16_t wpm, uint8_t m_limit, uint8_t m_limit_low, uint8_t t_freq, uint8_t s_freq, int nb_ms);
 void cw_decoder_process(int32_t audio_sample, uint32_t sample_counter);
 char cw_decoder_get_char(void);
 uint16_t cw_decoder_get_wpm(void);
 float cw_decoder_get_magnitude_limit(void);
+#endif

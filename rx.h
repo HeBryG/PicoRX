@@ -69,6 +69,13 @@ struct rx_settings
   uint8_t pwm_max;
   uint8_t pwm_threshold;
   bool rx_isolation;
+  bool    cw_decoder;
+  uint8_t cw_decoder_tone_freq;
+  uint8_t cw_decoder_wpm;
+  uint8_t cw_decoder_m_limit;
+  uint8_t cw_decoder_m_l_limit;
+  uint8_t cw_decoder_sampl_freq;
+  uint8_t cw_decoder_nb_ms;
 };
 
 struct rx_status

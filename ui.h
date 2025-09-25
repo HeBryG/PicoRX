@@ -65,7 +65,6 @@ class ui
 {
 
   private:
-
   s_settings settings;
   const uint32_t timeout_lookup[8] = {0, 5000000, 10000000, 15000000, 30000000, 60000000, 120000000, 240000000};
   const char modes[6][4]  = {" AM", "AMS", "LSB", "USB", " FM", " CW"};
@@ -165,7 +164,7 @@ class ui
   //menu items
   void print_enum_option(const char options[], uint8_t option);
   void print_menu_option(const char options[], uint8_t option);
-
+  bool cw_decoder_menu(bool &ok);
   bool menu_entry(const char title[], const char options[], uint32_t *value, bool &ok);
   bool enumerate_entry(const char title[], const char options[], uint8_t &value, bool &ok, bool &changed);
   bool bit_entry(const char title[], const char options[], bool &value, bool &ok);
@@ -181,7 +180,7 @@ class ui
   bool upload_memory();
   void autosave();
   bool display_timeout(bool encoder_change);
-
+  void add_to_cw_buffer(char new_char);
   uint32_t regmode = 1;
   rx_settings &settings_to_apply;
   rx_status &status;
@@ -195,7 +194,7 @@ class ui
   u8g2_t u8g2;
 
   public:
-
+  void display_decoded_cw();
   s_settings & get_settings(){return settings;};
   void autorestore();
   void do_ui();
